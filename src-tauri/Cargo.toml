@@ -4,7 +4,7 @@
 # =============================================================================
 [package]
 name = "plc-ladder-sim"
-version = "1.0.1"
+version = "1.0.2"
 description = "PLC Ladder Simulator Pro — desktop LAD editor/simulator with Modbus TCP slave"
 authors = ["PLC Ladder Simulator contributors"]
 edition = "2021"

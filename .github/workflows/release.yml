@@ -1,4 +1,5 @@
-# Multi-platform installers → public GitHub Release (same pattern as ProjectToText)
+# Multi-platform installers → public GitHub Release
+# Pattern aligned with krzysztofautomatyk/ProjectToText (working reference).
 # Trigger: git tag v* && git push origin v*
 name: Release
 
@@ -47,38 +48,33 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          # Prefer Ayatana only — do not install both appindicator stacks (apt conflict).
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            librsvg2-dev \
-            patchelf \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Verify Tauri icons present
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la src-tauri/icons
+          test -f src-tauri/icons/32x32.png
+          test -f src-tauri/icons/128x128.png
+          test -f "src-tauri/icons/128x128@2x.png"
+          test -f src-tauri/icons/icon.icns
+          test -f src-tauri/icons/icon.ico
+          test -f src-tauri/icons/icon.png
+          echo "All required icons OK"
 
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build installers & upload to Release
-        uses: tauri-apps/tauri-action@v0
+      # releaseBody must be a single quoted string (ProjectToText lesson: multi-line
+      # YAML maps break tauri-action / release creation on some runners).
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', github.run_id) }}
-          releaseName: "PLC Ladder Simulator Pro ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}"
-          releaseBody: |
-            ## Installers
-
-            Download the asset for your OS (same style as ProjectToText releases).
-
-            | Platform | Packages |
-            |----------|----------|
-            | **Windows** | `.msi`, `.exe` (NSIS) |
-            | **macOS** | `.dmg` (Apple Silicon + Intel) |
-            | **Linux** | `.deb`, `.AppImage` |
-
-            **Unsigned OSS builds** — macOS Gatekeeper / Windows SmartScreen may warn.
-            See [docs/RELEASES.md](https://github.com/krzysztofautomatyk/plc-ladder-sim/blob/main/docs/RELEASES.md).
-          # Public release (not draft) — packages visible on /releases like ProjectToText
+          releaseName: PLC Ladder Simulator Pro ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+          releaseBody: "Prebuilt installers for Windows (.msi/.exe), macOS (.dmg arm64+x64), and Linux (.deb/.AppImage). Unsigned OSS builds — expect Gatekeeper/SmartScreen warnings. Docs: https://github.com/krzysztofautomatyk/plc-ladder-sim/blob/main/docs/RELEASES.md"
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

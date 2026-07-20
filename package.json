@@ -1,6 +1,6 @@
 {
   "name": "plc-ladder-sim",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "PLC Ladder Simulator Pro — desktop LAD editor and simulator with Modbus TCP slave",
   "license": "MIT",
