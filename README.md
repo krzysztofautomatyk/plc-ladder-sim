@@ -52,7 +52,7 @@ v1 builds are **unsigned** (expect Gatekeeper / SmartScreen prompts). Details: [
 - **Modbus TCP slave** — coils, discrete, holding & input registers
 - **Symbol table** + Modbus map UI
 - **Export / import** — program JSON + bytecode
-- **Audit trail** — append-only hash chain + report export
+- **Audit trail** — append-only SHA-256 hash chain, **restored & re-verified on startup**, with report export
 
 ---
 

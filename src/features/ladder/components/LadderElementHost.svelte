@@ -52,12 +52,10 @@
   const lit = $derived(active || energized);
 
   const topLabel = $derived(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    def.topLabel(element as any, formatAddress)
+    def.topLabel(element, formatAddress)
   );
   const bottomLabel = $derived(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    def.bottomLabel(element as any, formatAddress)
+    def.bottomLabel(element, formatAddress)
   );
 
   function openEdit(e: Event) {
@@ -85,7 +83,7 @@
   }}
   role="button"
   tabindex="0"
-  title="Kliknij, aby edytować adres (I/Q/M/R)"
+  title="Click to edit address (I/Q/M/R)"
 >
   <button
     type="button"

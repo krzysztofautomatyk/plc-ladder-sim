@@ -122,7 +122,7 @@
   function applyQuick() {
     const p = parseVarString(quick);
     if (!p) {
-      parseError = "Nieprawidłowy adres. Przykłady: I0, Q1, M2.3, R10, R1.5";
+      parseError = "Invalid address. Examples: I0, Q1, M2.3, R10, R1.5";
       return;
     }
     parseError = "";
@@ -144,7 +144,7 @@
   function mustParse(s: string, label: string): Address | null {
     const p = parseVarString(s);
     if (!p) {
-      parseError = `Błędny adres (${label}): ${s}`;
+      parseError = `Invalid address (${label}): ${s}`;
       return null;
     }
     return p.address;
@@ -241,12 +241,12 @@
     >
       <header class="dlg-h">
         <div>
-          <h2 id="dlg-title">Właściwości elementu</h2>
+          <h2 id="dlg-title">Element properties</h2>
           <p class="sub">{typeLabel} · <code>{element.id}</code></p>
         </div>
         <div class="hdr-actions">
           <button type="button" class="tia-btn" onclick={() => (showHelp = !showHelp)}>
-            {showHelp ? "← Wróć" : "Help"}
+            {showHelp ? "← Back" : "Help"}
           </button>
           <button type="button" class="tia-btn" onclick={onClose}>✕</button>
         </div>
@@ -274,7 +274,7 @@
         <div class="dlg-b">
           {#if isBit}
             <section class="sec">
-              <h3>Adres zmiennej (I / Q / M / R)</h3>
+              <h3>Variable address (I / Q / M / R)</h3>
               <div class="row">
                 <label>
                   Prefix
@@ -286,7 +286,7 @@
                   </select>
                 </label>
                 <label>
-                  Numer
+                  Number
                   <input type="number" min="0" max="65535" bind:value={index} />
                 </label>
                 <label class="chk">
@@ -309,20 +309,20 @@
                 </label>
               </div>
               <p class="preview">
-                Podgląd: <strong>{formatAddress(primaryAddress())}</strong>
+                Preview: <strong>{formatAddress(primaryAddress())}</strong>
               </p>
             </section>
 
             <section class="sec">
-              <h3>Szybki adres</h3>
+              <h3>Quick address</h3>
               <div class="row">
                 <input
                   class="grow"
-                  placeholder="np. I0, Q1, M2.3, R10, R1.5"
+                  placeholder="e.g. I0, Q1, M2.3, R10, R1.5"
                   bind:value={quick}
                   onkeydown={(e) => e.key === "Enter" && applyQuick()}
                 />
-                <button type="button" class="tia-btn" onclick={applyQuick}>Parsuj</button>
+                <button type="button" class="tia-btn" onclick={applyQuick}>Parse</button>
               </div>
             </section>
           {:else if isTimer}

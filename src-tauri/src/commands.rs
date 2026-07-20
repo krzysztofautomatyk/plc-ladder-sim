@@ -5,14 +5,14 @@
 
 use crate::audit::{AuditEntry, AuditReport, AuditTrail};
 use crate::plc::compiler::{
-    compile, demo_program, export_bytecode, import_bytecode, CompiledProgram, LadderProgram,
+    compile, demo_program, export_bytecode, import_bytecode, LadderProgram,
 };
 use crate::plc::engine::PlcEngine;
 use crate::plc::memory::{MemorySnapshot, PlcMemory, PlcRunState};
 use crate::plc::modbus::{ModbusController, ModbusStatus};
 use crate::plc::modbus_map::ModbusMapSnapshot;
 use crate::plc::symbols::{PlcSymbol, SymbolTable, SymbolTableSnapshot};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
 use tracing::info;
@@ -265,10 +265,7 @@ pub fn export_program_json(state: State<'_, AppState>) -> CommandResult<String> 
 
 /// Import program from JSON string.
 #[tauri::command]
-pub fn import_program_json(
-    state: State<'_, AppState>,
-    json: String,
-) -> CommandResult<ProgramInfo> {
+pub fn import_program_json(state: State<'_, AppState>, json: String) -> CommandResult<ProgramInfo> {
     match serde_json::from_str::<LadderProgram>(&json) {
         Ok(program) => update_program(state, program),
         Err(e) => CommandResult::err(format!("invalid JSON: {e}")),
@@ -281,8 +278,8 @@ pub fn export_program_bytecode(state: State<'_, AppState>) -> CommandResult<Stri
     match state.engine.program_snapshot() {
         Some(p) => match export_bytecode(&p) {
             Ok(bytes) => {
-                use std::io::Write;
-                // base64 without extra dep: hex for simplicity + integrity
+                // Hex-encode the compiled bincode bytecode. Integrity is anchored
+                // by the program's SHA-256 hash carried inside the package.
                 let hex = hex::encode(&bytes);
                 state.audit.record(
                     "operator",
@@ -290,7 +287,6 @@ pub fn export_program_bytecode(state: State<'_, AppState>) -> CommandResult<Stri
                     format!("len={}", bytes.len()),
                     p.hash,
                 );
-                let _ = std::io::sink().write_all(&[]);
                 CommandResult::ok(hex)
             }
             Err(e) => CommandResult::err(e.to_string()),
@@ -358,7 +354,10 @@ pub fn export_audit_report(state: State<'_, AppState>) -> CommandResult<AuditRep
     state.audit.record(
         "operator",
         "EXPORT_AUDIT",
-        format!("entries={} valid={}", report.entry_count, report.chain_valid),
+        format!(
+            "entries={} valid={}",
+            report.entry_count, report.chain_valid
+        ),
         state.memory.program_hash(),
     );
     CommandResult::ok(state.audit.report())
@@ -493,6 +492,21 @@ pub fn set_modbus_port(state: State<'_, AppState>, port: u16) -> CommandResult<M
 }
 
 #[tauri::command]
+pub fn set_modbus_write_enabled(
+    state: State<'_, AppState>,
+    allow: bool,
+) -> CommandResult<ModbusStatus> {
+    state.memory.set_allow_modbus_write(allow);
+    state.audit.record(
+        "operator",
+        "MODBUS_SET_WRITE_ENABLED",
+        format!("{allow}"),
+        state.memory.program_hash(),
+    );
+    CommandResult::ok(state.modbus.status())
+}
+
+#[tauri::command]
 pub fn get_modbus_map(state: State<'_, AppState>) -> CommandResult<ModbusMapSnapshot> {
     CommandResult::ok(state.modbus.map().snapshot())
 }
@@ -531,9 +545,3 @@ fn current_status(state: &AppState) -> SimStatus {
         fault_message: state.memory.snapshot().fault_message,
     }
 }
-
-#[allow(dead_code)]
-fn _type_export(_: CompiledProgram) {}
-
-#[derive(Debug, Deserialize)]
-pub struct _UnusedPlaceholder;

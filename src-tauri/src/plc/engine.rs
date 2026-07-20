@@ -48,6 +48,41 @@ struct CounterState {
     loaded: bool,
 }
 
+/// Process-image inputs captured once at the beginning of a scan.
+#[derive(Debug, Clone)]
+struct ScanInputImage {
+    discrete_inputs: Vec<bool>,
+    input_registers: Vec<u16>,
+}
+
+impl ScanInputImage {
+    fn capture(memory: &PlcMemory) -> Self {
+        let snapshot = memory.snapshot();
+        Self {
+            discrete_inputs: snapshot.discrete_inputs,
+            input_registers: snapshot.input_registers,
+        }
+    }
+
+    fn discrete(&self, index: u16) -> Result<bool, ScanError> {
+        self.discrete_inputs
+            .get(index as usize)
+            .copied()
+            .ok_or_else(|| {
+                ScanError::Memory(format!("address out of range in discrete_input: {index}"))
+            })
+    }
+
+    fn input_reg(&self, index: u16) -> Result<u16, ScanError> {
+        self.input_registers
+            .get(index as usize)
+            .copied()
+            .ok_or_else(|| {
+                ScanError::Memory(format!("address out of range in input_register: {index}"))
+            })
+    }
+}
+
 /// Shared engine handle used by Tauri commands.
 pub struct PlcEngine {
     memory: Arc<PlcMemory>,
@@ -67,10 +102,6 @@ impl PlcEngine {
             stop_flag: AtomicBool::new(false),
             last_active: RwLock::new(HashSet::new()),
         })
-    }
-
-    pub fn memory(&self) -> Arc<PlcMemory> {
-        Arc::clone(&self.memory)
     }
 
     pub fn is_running(&self) -> bool {
@@ -149,7 +180,7 @@ impl PlcEngine {
     async fn scan_loop(self: Arc<Self>, app: AppHandle) {
         let mut timers: HashMap<u16, TimerState> = HashMap::new();
         let mut counters: HashMap<u16, CounterState> = HashMap::new();
-        /// Previous bit level per edge-contact element id (rising/falling)
+        // Previous bit level per edge-contact element id (rising/falling)
         let mut edges: HashMap<String, bool> = HashMap::new();
 
         loop {
@@ -234,6 +265,7 @@ impl PlcEngine {
         let mut or_accum = false;
         let mut active_elements: HashSet<String> = HashSet::new();
         let mut active_rungs: HashSet<String> = HashSet::new();
+        let input_image = ScanInputImage::capture(&self.memory);
         let inv_debug: HashMap<usize, String> = prog
             .debug_map
             .iter()
@@ -262,7 +294,7 @@ impl PlcEngine {
                     power = or_accum;
                 }
                 Instruction::LoadNo { area, index, bit } => {
-                    let v = self.read_bit(*area, *index, *bit)?;
+                    let v = self.read_bit(*area, *index, *bit, &input_image)?;
                     power = power && v;
                     if let Some(id) = inv_debug.get(&i) {
                         if power {
@@ -271,7 +303,7 @@ impl PlcEngine {
                     }
                 }
                 Instruction::LoadNc { area, index, bit } => {
-                    let v = self.read_bit(*area, *index, *bit)?;
+                    let v = self.read_bit(*area, *index, *bit, &input_image)?;
                     power = power && !v;
                     if let Some(id) = inv_debug.get(&i) {
                         if power {
@@ -285,7 +317,7 @@ impl PlcEngine {
                     bit,
                     element_id,
                 } => {
-                    let now = self.read_bit(*area, *index, *bit)?;
+                    let now = self.read_bit(*area, *index, *bit, &input_image)?;
                     let prev = edges.get(element_id).copied().unwrap_or(false);
                     let edge = !prev && now; // 0 → 1
                     edges.insert(element_id.clone(), now);
@@ -300,7 +332,7 @@ impl PlcEngine {
                     bit,
                     element_id,
                 } => {
-                    let now = self.read_bit(*area, *index, *bit)?;
+                    let now = self.read_bit(*area, *index, *bit, &input_image)?;
                     let prev = edges.get(element_id).copied().unwrap_or(false);
                     let edge = prev && !now; // 1 → 0
                     edges.insert(element_id.clone(), now);
@@ -331,7 +363,7 @@ impl PlcEngine {
                         self.write_bit(*area, *index, *bit, true)?;
                     }
                     // Highlight whenever the bit is latched OR power is present this scan
-                    let latched = self.read_bit(*area, *index, *bit)?;
+                    let latched = self.read_bit_live(*area, *index, *bit)?;
                     if let Some(id) = inv_debug.get(&i) {
                         if power || latched {
                             active_elements.insert(id.clone());
@@ -413,7 +445,7 @@ impl PlcEngine {
                 } => {
                     let st = timers.entry(*timer_index).or_default();
                     let rst = if let Some((a, idx, bit)) = reset {
-                        self.read_bit(*a, *idx, *bit)?
+                        self.read_bit(*a, *idx, *bit, &input_image)?
                     } else {
                         false
                     };
@@ -447,7 +479,7 @@ impl PlcEngine {
                 } => {
                     let st = counters.entry(*counter_index).or_default();
                     let reset_active = if let Some((a, idx, bit)) = reset {
-                        self.read_bit(*a, *idx, *bit)?
+                        self.read_bit(*a, *idx, *bit, &input_image)?
                     } else {
                         false
                     };
@@ -479,7 +511,7 @@ impl PlcEngine {
                 } => {
                     let st = counters.entry(*counter_index).or_default();
                     let load_active = if let Some((a, idx, bit)) = load {
-                        self.read_bit(*a, *idx, *bit)?
+                        self.read_bit(*a, *idx, *bit, &input_image)?
                     } else {
                         false
                     };
@@ -511,8 +543,8 @@ impl PlcEngine {
                     element_id,
                 } => {
                     if power {
-                        let va = self.read_word(a.0, a.1)?;
-                        let vb = self.read_word(b.0, b.1)?;
+                        let va = self.read_word(a.0, a.1, &input_image)?;
+                        let vb = self.read_word(b.0, b.1, &input_image)?;
                         let result = match op {
                             MathOp::Add => {
                                 va.checked_add(vb).ok_or(ScanError::ArithmeticOverflow)?
@@ -540,7 +572,7 @@ impl PlcEngine {
                     element_id,
                 } => {
                     if power {
-                        let v = self.read_word(source.0, source.1)?;
+                        let v = self.read_word(source.0, source.1, &input_image)?;
                         self.write_word(dest.0, dest.1, v)?;
                         active_elements.insert(element_id.clone());
                     }
@@ -551,8 +583,8 @@ impl PlcEngine {
                     b,
                     element_id,
                 } => {
-                    let va = self.read_word(a.0, a.1)?;
-                    let vb = self.read_word(b.0, b.1)?;
+                    let va = self.read_word(a.0, a.1, &input_image)?;
+                    let vb = self.read_word(b.0, b.1, &input_image)?;
                     let ok = match op {
                         CmpOp::Eq => va == vb,
                         CmpOp::Ne => va != vb,
@@ -617,7 +649,22 @@ impl PlcEngine {
         area: MemArea,
         index: u16,
         bit: Option<u8>,
+        input_image: &ScanInputImage,
     ) -> Result<bool, ScanError> {
+        match area {
+            MemArea::Discrete => input_image.discrete(index),
+            MemArea::InputReg => {
+                let v = input_image.input_reg(index)?;
+                Ok(match bit {
+                    Some(b) => (v >> (b.min(15))) & 1 == 1,
+                    None => v != 0,
+                })
+            }
+            MemArea::Coil | MemArea::Holding => self.read_bit_live(area, index, bit),
+        }
+    }
+
+    fn read_bit_live(&self, area: MemArea, index: u16, bit: Option<u8>) -> Result<bool, ScanError> {
         match area {
             MemArea::Coil => self
                 .memory
@@ -705,16 +752,18 @@ impl PlcEngine {
         }
     }
 
-    fn read_word(&self, area: MemArea, index: u16) -> Result<u16, ScanError> {
+    fn read_word(
+        &self,
+        area: MemArea,
+        index: u16,
+        input_image: &ScanInputImage,
+    ) -> Result<u16, ScanError> {
         match area {
             MemArea::Holding => self
                 .memory
                 .get_holding(index)
                 .map_err(|e| ScanError::Memory(e.to_string())),
-            MemArea::InputReg => self
-                .memory
-                .get_input_reg(index)
-                .map_err(|e| ScanError::Memory(e.to_string())),
+            MemArea::InputReg => input_image.input_reg(index),
             MemArea::Coil => {
                 let b = self
                     .memory
@@ -723,10 +772,7 @@ impl PlcEngine {
                 Ok(if b { 1 } else { 0 })
             }
             MemArea::Discrete => {
-                let b = self
-                    .memory
-                    .get_discrete(index)
-                    .map_err(|e| ScanError::Memory(e.to_string()))?;
+                let b = input_image.discrete(index)?;
                 Ok(if b { 1 } else { 0 })
             }
         }
@@ -790,7 +836,9 @@ impl ScanError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plc::compiler::{compile, demo_program, Address, LadderElement, LadderProgram, Rung};
+    use crate::plc::compiler::{
+        compile, demo_program, Address, LadderElement, LadderProgram, Rung,
+    };
     use std::collections::BTreeMap;
 
     fn run_n(engine: &PlcEngine, n: u32, cycle_ms: u32) {
@@ -801,6 +849,48 @@ mod tests {
             engine
                 .execute_scan(cycle_ms, &mut timers, &mut counters, &mut edges)
                 .expect("scan");
+        }
+    }
+
+    fn single_rung_program(name: &str, elements: Vec<LadderElement>) -> LadderProgram {
+        LadderProgram {
+            name: name.into(),
+            version: "1".into(),
+            description: String::new(),
+            metadata: BTreeMap::new(),
+            rungs: vec![Rung {
+                id: "r0".into(),
+                comment: String::new(),
+                enabled: true,
+                or_branches: vec![],
+                elements,
+            }],
+        }
+    }
+
+    #[derive(Default)]
+    struct ScanState {
+        timers: HashMap<u16, TimerState>,
+        counters: HashMap<u16, CounterState>,
+        edges: HashMap<String, bool>,
+    }
+
+    impl ScanState {
+        fn scan(&mut self, engine: &PlcEngine, cycle_ms: u32) {
+            engine
+                .execute_scan(
+                    cycle_ms,
+                    &mut self.timers,
+                    &mut self.counters,
+                    &mut self.edges,
+                )
+                .expect("scan");
+        }
+
+        fn scan_n(&mut self, engine: &PlcEngine, n: u32, cycle_ms: u32) {
+            for _ in 0..n {
+                self.scan(engine, cycle_ms);
+            }
         }
     }
 
@@ -904,13 +994,563 @@ mod tests {
         let mut edges = HashMap::new();
         mem.set_discrete(0, true).unwrap();
         for _ in 0..3 {
-            eng.execute_scan(20, &mut timers, &mut counters, &mut edges).unwrap();
+            eng.execute_scan(20, &mut timers, &mut counters, &mut edges)
+                .unwrap();
         }
         let et_mid = mem.get_holding(10).unwrap(); // timer 5 * 2
         assert!(et_mid >= 60);
         mem.set_discrete(0, false).unwrap();
-        eng.execute_scan(20, &mut timers, &mut counters, &mut edges).unwrap();
+        eng.execute_scan(20, &mut timers, &mut counters, &mut edges)
+            .unwrap();
         let et_hold = mem.get_holding(10).unwrap();
         assert_eq!(et_hold, et_mid, "RTO must retain ET when IN drops");
+    }
+
+    #[test]
+    fn rising_edge_contact_fires_for_one_scan() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = single_rung_program(
+            "edge",
+            vec![
+                LadderElement::ContactRising {
+                    id: "edge".into(),
+                    address: Address::discrete(0),
+                },
+                LadderElement::Coil {
+                    id: "q".into(),
+                    address: Address::coil(0),
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+
+        let mut timers = HashMap::new();
+        let mut counters = HashMap::new();
+        let mut edges = HashMap::new();
+
+        mem.set_discrete(0, false).unwrap();
+        eng.execute_scan(20, &mut timers, &mut counters, &mut edges)
+            .unwrap();
+        assert!(!mem.get_coil(0).unwrap());
+
+        mem.set_discrete(0, true).unwrap();
+        eng.execute_scan(20, &mut timers, &mut counters, &mut edges)
+            .unwrap();
+        assert!(mem.get_coil(0).unwrap(), "rising edge should pulse once");
+
+        eng.execute_scan(20, &mut timers, &mut counters, &mut edges)
+            .unwrap();
+        assert!(!mem.get_coil(0).unwrap(), "held input must not retrigger");
+    }
+
+    #[test]
+    fn set_reset_latch_holds_until_reset() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = LadderProgram {
+            name: "set_reset".into(),
+            version: "1".into(),
+            description: String::new(),
+            metadata: BTreeMap::new(),
+            rungs: vec![
+                Rung {
+                    id: "set".into(),
+                    comment: String::new(),
+                    enabled: true,
+                    or_branches: vec![],
+                    elements: vec![
+                        LadderElement::ContactNo {
+                            id: "set_in".into(),
+                            address: Address::discrete(0),
+                        },
+                        LadderElement::CoilSet {
+                            id: "set_q".into(),
+                            address: Address::coil(0),
+                        },
+                    ],
+                },
+                Rung {
+                    id: "reset".into(),
+                    comment: String::new(),
+                    enabled: true,
+                    or_branches: vec![],
+                    elements: vec![
+                        LadderElement::ContactNo {
+                            id: "reset_in".into(),
+                            address: Address::discrete(1),
+                        },
+                        LadderElement::CoilReset {
+                            id: "reset_q".into(),
+                            address: Address::coil(0),
+                        },
+                    ],
+                },
+            ],
+        };
+        eng.load_program(compile(prog).unwrap());
+
+        mem.set_discrete(0, true).unwrap();
+        run_n(&eng, 1, 20);
+        assert!(mem.get_coil(0).unwrap());
+
+        mem.set_discrete(0, false).unwrap();
+        run_n(&eng, 1, 20);
+        assert!(mem.get_coil(0).unwrap(), "SET coil should retain state");
+
+        mem.set_discrete(1, true).unwrap();
+        run_n(&eng, 1, 20);
+        assert!(!mem.get_coil(0).unwrap(), "RESET coil should clear latch");
+    }
+
+    #[test]
+    fn ton_waits_until_preset() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = single_rung_program(
+            "ton",
+            vec![
+                LadderElement::ContactNo {
+                    id: "in".into(),
+                    address: Address::discrete(0),
+                },
+                LadderElement::Ton {
+                    id: "ton".into(),
+                    preset_ms: 60,
+                    timer_index: 0,
+                    done_address: Some(Address::coil(1)),
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+        mem.set_discrete(0, true).unwrap();
+        let mut scan = ScanState::default();
+
+        scan.scan_n(&eng, 2, 20);
+        assert!(!mem.get_coil(1).unwrap());
+        scan.scan(&eng, 20);
+        assert!(mem.get_coil(1).unwrap());
+    }
+
+    #[test]
+    fn tof_delays_drop_after_input_falls() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = single_rung_program(
+            "tof",
+            vec![
+                LadderElement::ContactNo {
+                    id: "in".into(),
+                    address: Address::discrete(0),
+                },
+                LadderElement::Tof {
+                    id: "tof".into(),
+                    preset_ms: 60,
+                    timer_index: 0,
+                    done_address: Some(Address::coil(1)),
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+        let mut scan = ScanState::default();
+
+        mem.set_discrete(0, true).unwrap();
+        scan.scan(&eng, 20);
+        assert!(mem.get_coil(1).unwrap());
+
+        mem.set_discrete(0, false).unwrap();
+        scan.scan_n(&eng, 2, 20);
+        assert!(mem.get_coil(1).unwrap());
+        scan.scan(&eng, 20);
+        assert!(!mem.get_coil(1).unwrap());
+    }
+
+    #[test]
+    fn ctu_counts_rising_edges_and_reset_clears() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = single_rung_program(
+            "ctu",
+            vec![
+                LadderElement::ContactNo {
+                    id: "pulse".into(),
+                    address: Address::discrete(0),
+                },
+                LadderElement::Ctu {
+                    id: "ctu".into(),
+                    preset: 3,
+                    counter_index: 0,
+                    done_address: Some(Address::coil(2)),
+                    reset_address: Some(Address::discrete(1)),
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+        let mut scan = ScanState::default();
+
+        for _ in 0..3 {
+            mem.set_discrete(0, true).unwrap();
+            scan.scan(&eng, 20);
+            mem.set_discrete(0, false).unwrap();
+            scan.scan(&eng, 20);
+        }
+        assert!(mem.get_coil(2).unwrap());
+        assert_eq!(mem.get_holding(0).unwrap(), 3);
+
+        mem.set_discrete(1, true).unwrap();
+        scan.scan(&eng, 20);
+        assert!(!mem.get_coil(2).unwrap());
+        assert_eq!(mem.get_holding(0).unwrap(), 0);
+    }
+
+    #[test]
+    fn ctd_loads_and_counts_down_to_done() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = single_rung_program(
+            "ctd",
+            vec![
+                LadderElement::ContactNo {
+                    id: "pulse".into(),
+                    address: Address::discrete(0),
+                },
+                LadderElement::Ctd {
+                    id: "ctd".into(),
+                    preset: 2,
+                    counter_index: 2,
+                    done_address: Some(Address::coil(3)),
+                    load_address: Some(Address::discrete(1)),
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+        let mut scan = ScanState::default();
+
+        mem.set_discrete(1, true).unwrap();
+        scan.scan(&eng, 20);
+        mem.set_discrete(1, false).unwrap();
+        assert_eq!(mem.get_holding(4).unwrap(), 2);
+
+        for _ in 0..2 {
+            mem.set_discrete(0, true).unwrap();
+            scan.scan(&eng, 20);
+            mem.set_discrete(0, false).unwrap();
+            scan.scan(&eng, 20);
+        }
+        assert!(mem.get_coil(3).unwrap());
+        assert_eq!(mem.get_holding(4).unwrap(), 0);
+    }
+
+    #[test]
+    fn discrete_inputs_are_snapshotted_for_current_scan() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = LadderProgram {
+            name: "input_snapshot".into(),
+            version: "1".into(),
+            description: String::new(),
+            metadata: BTreeMap::new(),
+            rungs: vec![
+                Rung {
+                    id: "write_input".into(),
+                    comment: String::new(),
+                    enabled: true,
+                    or_branches: vec![],
+                    elements: vec![
+                        LadderElement::ContactNo {
+                            id: "trigger".into(),
+                            address: Address::discrete(0),
+                        },
+                        LadderElement::Coil {
+                            id: "write_i1".into(),
+                            address: Address::discrete(1),
+                        },
+                    ],
+                },
+                Rung {
+                    id: "read_input".into(),
+                    comment: String::new(),
+                    enabled: true,
+                    or_branches: vec![],
+                    elements: vec![
+                        LadderElement::ContactNo {
+                            id: "read_i1".into(),
+                            address: Address::discrete(1),
+                        },
+                        LadderElement::Coil {
+                            id: "q".into(),
+                            address: Address::coil(0),
+                        },
+                    ],
+                },
+            ],
+        };
+        eng.load_program(compile(prog).unwrap());
+
+        mem.set_discrete(0, true).unwrap();
+        run_n(&eng, 1, 20);
+        assert!(mem.get_discrete(1).unwrap());
+        assert!(
+            !mem.get_coil(0).unwrap(),
+            "same-scan reads must use the frozen input image"
+        );
+
+        run_n(&eng, 1, 20);
+        assert!(mem.get_coil(0).unwrap());
+    }
+
+    #[test]
+    fn math_overflow_faults() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = single_rung_program(
+            "ovf",
+            vec![LadderElement::Math {
+                id: "m".into(),
+                op: crate::plc::compiler::MathOp::Add,
+                a: Address::holding(0),
+                b: Address::holding(1),
+                dest: Address::holding(2),
+            }],
+        );
+        eng.load_program(compile(prog).unwrap());
+        mem.set_holding(0, u16::MAX).unwrap();
+        mem.set_holding(1, 1).unwrap();
+        let mut t = HashMap::new();
+        let mut c = HashMap::new();
+        let mut e = HashMap::new();
+        assert!(
+            eng.execute_scan(20, &mut t, &mut c, &mut e).is_err(),
+            "u16 overflow must fault, not wrap or panic"
+        );
+    }
+
+    #[test]
+    fn holding_bit_write_preserves_other_bits() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let addr = Address {
+            area: crate::plc::compiler::MemArea::Holding,
+            index: 5,
+            bit: Some(3),
+        };
+        let prog = single_rung_program(
+            "bit",
+            vec![
+                LadderElement::ContactNo {
+                    id: "c".into(),
+                    address: Address::discrete(0),
+                },
+                LadderElement::Coil {
+                    id: "q".into(),
+                    address: addr,
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+        mem.set_holding(5, 0b0000_0001).unwrap(); // preset bit 0
+        mem.set_discrete(0, true).unwrap();
+        run_n(&eng, 1, 20);
+        let v = mem.get_holding(5).unwrap();
+        assert_eq!(v & (1 << 3), 1 << 3, "bit 3 set by masked write");
+        assert_eq!(v & 1, 1, "bit 0 must be preserved");
+    }
+
+    #[test]
+    fn falling_edge_contact_fires_one_scan() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = single_rung_program(
+            "fall",
+            vec![
+                LadderElement::ContactFalling {
+                    id: "f".into(),
+                    address: Address::discrete(0),
+                },
+                LadderElement::Coil {
+                    id: "q".into(),
+                    address: Address::coil(0),
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+        let mut s = ScanState::default();
+        mem.set_discrete(0, true).unwrap();
+        s.scan(&eng, 20); // establish high level
+        assert!(!mem.get_coil(0).unwrap());
+        mem.set_discrete(0, false).unwrap();
+        s.scan(&eng, 20); // 1→0 transition fires
+        assert!(mem.get_coil(0).unwrap());
+        s.scan(&eng, 20); // one-shot: no longer firing
+        assert!(!mem.get_coil(0).unwrap());
+    }
+
+    #[test]
+    fn coil_negated_writes_inverse_of_power() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = single_rung_program(
+            "neg",
+            vec![
+                LadderElement::ContactNo {
+                    id: "c".into(),
+                    address: Address::discrete(0),
+                },
+                LadderElement::CoilNegated {
+                    id: "q".into(),
+                    address: Address::coil(0),
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+        run_n(&eng, 1, 20); // power false ⇒ negated coil TRUE
+        assert!(mem.get_coil(0).unwrap());
+        mem.set_discrete(0, true).unwrap();
+        run_n(&eng, 1, 20); // power true ⇒ negated coil FALSE
+        assert!(!mem.get_coil(0).unwrap());
+    }
+
+    // Deterministic fuzz: the scan path must NEVER panic — for any well-typed
+    // program and any input state it returns Ok(tick) or a typed ScanError
+    // (out-of-range address, overflow, divide-by-zero → FAULT/STOP).
+    #[test]
+    fn fuzz_scan_never_panics() {
+        use crate::plc::compiler::{CmpOp, MathOp, MemArea};
+
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        fn addr(r: &mut u64) -> Address {
+            let area = match lcg(r) % 4 {
+                0 => MemArea::Coil,
+                1 => MemArea::Discrete,
+                2 => MemArea::Holding,
+                _ => MemArea::InputReg,
+            };
+            // Range spans well beyond process-image bounds to exercise the
+            // out-of-range → ScanError::Memory path without panicking.
+            let index = (lcg(r) % 6000) as u16;
+            let bit = if lcg(r) % 2 == 0 {
+                Some((lcg(r) % 16) as u8)
+            } else {
+                None
+            };
+            Address { area, index, bit }
+        }
+        fn maybe(r: &mut u64) -> Option<Address> {
+            if lcg(r) % 2 == 0 {
+                Some(addr(r))
+            } else {
+                None
+            }
+        }
+        fn element(r: &mut u64) -> LadderElement {
+            let id = format!("e{}", lcg(r) % 100_000);
+            match lcg(r) % 12 {
+                0 => LadderElement::ContactNo {
+                    id,
+                    address: addr(r),
+                },
+                1 => LadderElement::ContactNc {
+                    id,
+                    address: addr(r),
+                },
+                2 => LadderElement::ContactRising {
+                    id,
+                    address: addr(r),
+                },
+                3 => LadderElement::Coil {
+                    id,
+                    address: addr(r),
+                },
+                4 => LadderElement::CoilSet {
+                    id,
+                    address: addr(r),
+                },
+                5 => LadderElement::CoilReset {
+                    id,
+                    address: addr(r),
+                },
+                6 => LadderElement::Ton {
+                    id,
+                    preset_ms: (lcg(r) % 5000) as u32,
+                    timer_index: (lcg(r) % 40) as u16,
+                    done_address: maybe(r),
+                },
+                7 => LadderElement::Ctu {
+                    id,
+                    preset: (lcg(r) % 50) as u16,
+                    counter_index: (lcg(r) % 40) as u16,
+                    done_address: maybe(r),
+                    reset_address: maybe(r),
+                },
+                8 => LadderElement::Math {
+                    id,
+                    op: match lcg(r) % 4 {
+                        0 => MathOp::Add,
+                        1 => MathOp::Sub,
+                        2 => MathOp::Mul,
+                        _ => MathOp::Div,
+                    },
+                    a: addr(r),
+                    b: addr(r),
+                    dest: addr(r),
+                },
+                9 => LadderElement::Move {
+                    id,
+                    source: addr(r),
+                    dest: addr(r),
+                },
+                10 => LadderElement::Compare {
+                    id,
+                    op: CmpOp::Lt,
+                    a: addr(r),
+                    b: addr(r),
+                },
+                _ => LadderElement::Wire { id },
+            }
+        }
+
+        let mut r: u64 = 0xD1B54A32D192ED03;
+        for _ in 0..300 {
+            let n = 1 + (lcg(&mut r) % 6) as usize;
+            let elements: Vec<LadderElement> = (0..n).map(|_| element(&mut r)).collect();
+            let prog = LadderProgram {
+                name: "fuzz".into(),
+                version: "1".into(),
+                description: String::new(),
+                metadata: BTreeMap::new(),
+                rungs: vec![Rung {
+                    id: "r0".into(),
+                    comment: String::new(),
+                    enabled: true,
+                    or_branches: vec![],
+                    elements,
+                }],
+            };
+            let Ok(compiled) = compile(prog) else {
+                continue;
+            };
+            let mem = PlcMemory::new().into_arc();
+            let eng = PlcEngine::new(Arc::clone(&mem));
+            eng.load_program(compiled);
+
+            // Randomise inputs, then scan repeatedly. Any error is acceptable;
+            // a panic (index-out-of-bounds, arithmetic panic, …) is not.
+            for i in 0..(lcg(&mut r) % 4) as u16 {
+                let _ = mem.set_discrete(i, lcg(&mut r) % 2 == 0);
+                let _ = mem.set_holding(i, (lcg(&mut r) % 65536) as u16);
+            }
+            let mut timers = HashMap::new();
+            let mut counters = HashMap::new();
+            let mut edges = HashMap::new();
+            for _ in 0..3 {
+                // Result intentionally ignored: Ok or Err, but must not panic.
+                let _ = eng.execute_scan(20, &mut timers, &mut counters, &mut edges);
+            }
+        }
     }
 }

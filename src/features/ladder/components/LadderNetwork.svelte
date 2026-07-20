@@ -106,25 +106,18 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
 <div
   class="net"
   class:selected
   class:online={active || anyActive}
-  onclick={onSelect}
-  onkeydown={(e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onSelect();
-    }
-  }}
   ondrop={onDrop}
   ondragover={onDragOver}
   role="group"
-  tabindex="-1"
 >
   <header class="hdr">
-    <span class="badge">Network {networkNo}</span>
+    <button type="button" class="badge" aria-pressed={selected} onclick={onSelect}>
+      Network {networkNo}
+    </button>
     <input
       class="title"
       value={rung.comment}
@@ -164,6 +157,8 @@
               class="bus or-bus"
               ondrop={(e) => onBranchDrop(e, bi)}
               ondragover={onDragOver}
+              role="group"
+              aria-label={`OR branch ${bi}`}
             >
               <span class="or-id">OR{bi}</span>
               <div class="flow">
@@ -292,6 +287,7 @@
     border-bottom: 1px solid #c0c7ce;
   }
   .badge {
+    border: 0;
     font-size: 11px;
     font-weight: 700;
     color: #fff;
@@ -299,6 +295,11 @@
     padding: 2px 8px;
     border-radius: 2px;
     flex-shrink: 0;
+    cursor: pointer;
+  }
+  .badge:focus-visible {
+    outline: 2px solid #003d5c;
+    outline-offset: 2px;
   }
   .title {
     flex: 1;

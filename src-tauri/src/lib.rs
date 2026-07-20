@@ -1,6 +1,7 @@
 //! =============================================================================
 //! PLC Ladder Simulator Pro — Tauri v2 application library entry.
 //! =============================================================================
+#![forbid(unsafe_code)]
 
 mod audit;
 mod commands;
@@ -32,8 +33,6 @@ pub fn run() {
     info!("PLC Ladder Simulator Pro starting");
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let memory = PlcMemory::new().into_arc();
             memory.set_cycle_ms(20);
@@ -49,6 +48,17 @@ pub fn run() {
                 audit.set_log_path(dir.join("audit_trail.jsonl"));
             }
 
+            // Restore the persisted hash chain so tamper-evidence spans restarts.
+            let (restored, chain_intact) = audit.load_persisted();
+            if restored > 0 && !chain_intact {
+                audit.record(
+                    "system",
+                    "AUDIT_CHAIN_WARNING",
+                    "restored audit trail failed integrity verification",
+                    memory.program_hash(),
+                );
+            }
+
             if let Ok(compiled) = compile(demo_program()) {
                 engine.load_program(compiled);
             }
@@ -56,7 +66,7 @@ pub fn run() {
             audit.record(
                 "system",
                 "APPLICATION_START",
-                "PLC Ladder Simulator Pro boot",
+                format!("PLC Ladder Simulator Pro boot (restored={restored}, chain_intact={chain_intact})"),
                 memory.program_hash(),
             );
 
@@ -106,6 +116,7 @@ pub fn run() {
             commands::start_modbus,
             commands::stop_modbus,
             commands::set_modbus_port,
+            commands::set_modbus_write_enabled,
             commands::get_modbus_map,
             commands::set_modbus_map,
         ])

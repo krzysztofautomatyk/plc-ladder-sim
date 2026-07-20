@@ -4,6 +4,7 @@
  */
 import type { LadderElement, PaletteKind } from "../../../../shared/lib/types";
 import type {
+  ElementGlyph,
   ElementDefinition,
   ElementType,
   RegistryEntry,
@@ -27,8 +28,34 @@ import * as math from "../math";
 import * as move from "../move";
 import * as compare from "../compare";
 
-function entry(mod: { definition: ElementDefinition; Glyph: RegistryEntry["Glyph"] }): RegistryEntry {
-  return { def: mod.definition, Glyph: mod.Glyph };
+function isElementOfType<K extends ElementType>(
+  element: LadderElement,
+  type: K
+): element is Extract<LadderElement, { type: K }> {
+  return element.type === type;
+}
+
+function entry<K extends ElementType>(mod: {
+  definition: ElementDefinition<K>;
+  Glyph: ElementGlyph<K>;
+}): RegistryEntry {
+  const { definition } = mod;
+  return {
+    def: {
+      kind: definition.kind,
+      category: definition.category,
+      label: definition.label,
+      shortLabel: definition.shortLabel,
+      help: definition.help,
+      cellClass: definition.cellClass,
+      create: definition.create,
+      topLabel: (element, fmt) =>
+        isElementOfType(element, definition.kind) ? definition.topLabel(element, fmt) : "",
+      bottomLabel: (element, fmt) =>
+        isElementOfType(element, definition.kind) ? definition.bottomLabel(element, fmt) : "",
+    },
+    Glyph: mod.Glyph as RegistryEntry["Glyph"],
+  };
 }
 
 /** All ladder instructions keyed by AST type. */

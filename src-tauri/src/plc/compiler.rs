@@ -51,13 +51,6 @@ impl Address {
             bit: None,
         }
     }
-    pub fn holding_bit(index: u16, bit: u8) -> Self {
-        Self {
-            area: MemArea::Holding,
-            index,
-            bit: Some(bit.min(15)),
-        }
-    }
 }
 
 /// Compare operators (power rail TRUE when relation holds).
@@ -76,18 +69,42 @@ pub enum CmpOp {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LadderElement {
-    ContactNo { id: String, address: Address },
-    ContactNc { id: String, address: Address },
+    ContactNo {
+        id: String,
+        address: Address,
+    },
+    ContactNc {
+        id: String,
+        address: Address,
+    },
     /// Rising edge (positive transition / P) — TRUE one scan on 0→1
-    ContactRising { id: String, address: Address },
+    ContactRising {
+        id: String,
+        address: Address,
+    },
     /// Falling edge (negative transition / N) — TRUE one scan on 1→0
-    ContactFalling { id: String, address: Address },
-    Coil { id: String, address: Address },
-    CoilNegated { id: String, address: Address },
+    ContactFalling {
+        id: String,
+        address: Address,
+    },
+    Coil {
+        id: String,
+        address: Address,
+    },
+    CoilNegated {
+        id: String,
+        address: Address,
+    },
     /// SET / latch — when power TRUE, bit stays 1 until RESET
-    CoilSet { id: String, address: Address },
+    CoilSet {
+        id: String,
+        address: Address,
+    },
     /// RESET / unlatch — when power TRUE, bit clears to 0
-    CoilReset { id: String, address: Address },
+    CoilReset {
+        id: String,
+        address: Address,
+    },
     Ton {
         id: String,
         preset_ms: u32,
@@ -144,7 +161,9 @@ pub enum LadderElement {
         a: Address,
         b: Address,
     },
-    Wire { id: String },
+    Wire {
+        id: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -311,7 +330,9 @@ pub enum Instruction {
     OrAlt,
     /// Finish OR network: power = any branch true
     OrEnd,
-    EndRung { rung_id: String },
+    EndRung {
+        rung_id: String,
+    },
     Nop,
 }
 
@@ -328,8 +349,6 @@ pub struct CompiledProgram {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompileError {
-    #[error("empty program")]
-    Empty,
     #[error("rung {0}: empty (no elements and no OR branches)")]
     EmptyRung(String),
     #[error("rung {0}: invalid element: {1}")]
@@ -550,13 +569,7 @@ fn compile_elements(
                     element_id: id.clone(),
                 });
             }
-            LadderElement::Math {
-                id,
-                op,
-                a,
-                b,
-                dest,
-            } => {
+            LadderElement::Math { id, op, a, b, dest } => {
                 debug_map.insert(id.clone(), idx);
                 instructions.push(Instruction::Math {
                     op: *op,
@@ -566,11 +579,7 @@ fn compile_elements(
                     element_id: id.clone(),
                 });
             }
-            LadderElement::Move {
-                id,
-                source,
-                dest,
-            } => {
+            LadderElement::Move { id, source, dest } => {
                 debug_map.insert(id.clone(), idx);
                 instructions.push(Instruction::Move {
                     source: (source.area, source.index),
@@ -764,8 +773,14 @@ mod tests {
         let c = compile(demo_program()).unwrap();
         assert!(!c.instructions.is_empty());
         assert_eq!(c.hash.len(), 64);
-        assert!(c.instructions.iter().any(|i| matches!(i, Instruction::OrBegin)));
-        assert!(c.instructions.iter().any(|i| matches!(i, Instruction::Compare { .. })));
+        assert!(c
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::OrBegin)));
+        assert!(c
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::Compare { .. })));
     }
 
     #[test]
@@ -782,5 +797,219 @@ mod tests {
         let mut p = demo_program();
         p.rungs[0].or_branches.push(vec![]);
         assert!(compile(p).is_err());
+    }
+
+    fn single_rung(elements: Vec<LadderElement>) -> LadderProgram {
+        LadderProgram {
+            name: "t".into(),
+            version: "1".into(),
+            description: String::new(),
+            metadata: BTreeMap::new(),
+            rungs: vec![Rung {
+                id: "r0".into(),
+                comment: String::new(),
+                enabled: true,
+                or_branches: vec![],
+                elements,
+            }],
+        }
+    }
+
+    #[test]
+    fn hash_is_deterministic_and_content_sensitive() {
+        let h1 = compile(demo_program()).unwrap().hash;
+        let h2 = compile(demo_program()).unwrap().hash;
+        assert_eq!(h1, h2, "same source ⇒ identical hash");
+
+        let mut changed = demo_program();
+        changed.version = "9.9.9".into();
+        let h3 = compile(changed).unwrap().hash;
+        assert_ne!(h1, h3, "changed program ⇒ different hash");
+    }
+
+    #[test]
+    fn disabled_rungs_are_skipped() {
+        let mut p = single_rung(vec![LadderElement::Coil {
+            id: "q".into(),
+            address: Address::coil(0),
+        }]);
+        p.rungs[0].enabled = false;
+        let c = compile(p).unwrap();
+        assert!(c.instructions.is_empty(), "disabled rung emits no bytecode");
+    }
+
+    #[test]
+    fn empty_rung_is_rejected() {
+        let p = single_rung(vec![]);
+        assert!(matches!(compile(p), Err(CompileError::EmptyRung(_))));
+    }
+
+    #[test]
+    fn holding_bit_addressing_roundtrips() {
+        let addr = Address {
+            area: MemArea::Holding,
+            index: 1,
+            bit: Some(3),
+        };
+        let c = compile(single_rung(vec![
+            LadderElement::ContactNo {
+                id: "c".into(),
+                address: addr,
+            },
+            LadderElement::Coil {
+                id: "q".into(),
+                address: Address::coil(0),
+            },
+        ]))
+        .unwrap();
+        assert!(c.instructions.iter().any(|i| matches!(
+            i,
+            Instruction::LoadNo {
+                area: MemArea::Holding,
+                index: 1,
+                bit: Some(3)
+            }
+        )));
+
+        // Bit survives a bytecode round-trip.
+        let c2 = import_bytecode(&export_bytecode(&c).unwrap()).unwrap();
+        assert_eq!(c.instructions, c2.instructions);
+    }
+
+    // --- Deterministic property/fuzz sweep ---------------------------------
+    // The compiler must NEVER panic on any well-typed AST and every successful
+    // compile must produce a 64-hex hash and survive a bytecode round-trip.
+
+    fn lcg(state: &mut u64) -> u64 {
+        *state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        *state
+    }
+
+    fn rand_addr(r: &mut u64) -> Address {
+        let area = match lcg(r) % 4 {
+            0 => MemArea::Coil,
+            1 => MemArea::Discrete,
+            2 => MemArea::Holding,
+            _ => MemArea::InputReg,
+        };
+        let index = (lcg(r) % 5000) as u16; // deliberately includes out-of-range
+        let bit = if lcg(r) % 2 == 0 {
+            Some((lcg(r) % 16) as u8)
+        } else {
+            None
+        };
+        Address { area, index, bit }
+    }
+
+    fn maybe_addr(r: &mut u64) -> Option<Address> {
+        if lcg(r) % 2 == 0 {
+            Some(rand_addr(r))
+        } else {
+            None
+        }
+    }
+
+    fn rand_element(r: &mut u64) -> LadderElement {
+        let id = format!("e{}", lcg(r) % 100_000);
+        match lcg(r) % 13 {
+            0 => LadderElement::ContactNo {
+                id,
+                address: rand_addr(r),
+            },
+            1 => LadderElement::ContactNc {
+                id,
+                address: rand_addr(r),
+            },
+            2 => LadderElement::ContactRising {
+                id,
+                address: rand_addr(r),
+            },
+            3 => LadderElement::ContactFalling {
+                id,
+                address: rand_addr(r),
+            },
+            4 => LadderElement::Coil {
+                id,
+                address: rand_addr(r),
+            },
+            5 => LadderElement::CoilSet {
+                id,
+                address: rand_addr(r),
+            },
+            6 => LadderElement::Ton {
+                id,
+                preset_ms: (lcg(r) % 5000) as u32,
+                timer_index: (lcg(r) % 60) as u16,
+                done_address: maybe_addr(r),
+            },
+            7 => LadderElement::Ctu {
+                id,
+                preset: (lcg(r) % 100) as u16,
+                counter_index: (lcg(r) % 60) as u16,
+                done_address: maybe_addr(r),
+                reset_address: maybe_addr(r),
+            },
+            8 => LadderElement::Math {
+                id,
+                op: match lcg(r) % 4 {
+                    0 => MathOp::Add,
+                    1 => MathOp::Sub,
+                    2 => MathOp::Mul,
+                    _ => MathOp::Div,
+                },
+                a: rand_addr(r),
+                b: rand_addr(r),
+                dest: rand_addr(r),
+            },
+            9 => LadderElement::Move {
+                id,
+                source: rand_addr(r),
+                dest: rand_addr(r),
+            },
+            10 => LadderElement::Compare {
+                id,
+                op: CmpOp::Ge,
+                a: rand_addr(r),
+                b: rand_addr(r),
+            },
+            11 => LadderElement::Wire { id },
+            _ => LadderElement::CoilReset {
+                id,
+                address: rand_addr(r),
+            },
+        }
+    }
+
+    #[test]
+    fn fuzz_random_programs_never_panic_and_roundtrip() {
+        let mut r: u64 = 0x9E3779B97F4A7C15;
+        for _ in 0..500 {
+            let n = 1 + (lcg(&mut r) % 6) as usize;
+            let elements: Vec<LadderElement> = (0..n).map(|_| rand_element(&mut r)).collect();
+            // Compilation must be total: Ok or a typed Err, never a panic.
+            if let Ok(c) = compile(single_rung(elements)) {
+                assert_eq!(c.hash.len(), 64);
+                let bytes = export_bytecode(&c).unwrap();
+                let c2 = import_bytecode(&bytes).unwrap();
+                assert_eq!(c.instructions, c2.instructions);
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_json_is_rejected_gracefully() {
+        for bad in [
+            "",
+            "{",
+            "null",
+            "{\"name\":\"x\"}",
+            "{\"rungs\": \"not-an-array\"}",
+            "[1,2,3]",
+        ] {
+            let parsed = serde_json::from_str::<LadderProgram>(bad);
+            assert!(parsed.is_err(), "malformed input must not parse: {bad:?}");
+        }
     }
 }

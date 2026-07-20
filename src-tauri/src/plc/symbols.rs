@@ -3,8 +3,8 @@
 //! Defines named bits and registers for ladder addressing and Modbus export.
 //! =============================================================================
 
-use serde::{Deserialize, Serialize};
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use super::compiler::MemArea;
@@ -59,7 +59,9 @@ impl SymbolTable {
 
     pub fn upsert(&self, symbol: PlcSymbol) {
         let mut list = self.symbols.write();
-        if let Some(i) = list.iter().position(|s| s.id == symbol.id || s.name == symbol.name)
+        if let Some(i) = list
+            .iter()
+            .position(|s| s.id == symbol.id || s.name == symbol.name)
         {
             list[i] = symbol;
         } else {
@@ -83,18 +85,102 @@ impl SymbolTable {
 
 fn default_symbols() -> Vec<PlcSymbol> {
     vec![
-        sym("s_i0", "Start_PB", MemArea::Discrete, 0, DataType::Bool, "Start pushbutton"),
-        sym("s_i1", "Stop_PB", MemArea::Discrete, 1, DataType::Bool, "Stop pushbutton (NC logic)"),
-        sym("s_i2", "Count_Pulse", MemArea::Discrete, 2, DataType::Bool, "Counter pulse"),
-        sym("s_i3", "Count_Reset", MemArea::Discrete, 3, DataType::Bool, "Counter reset"),
-        sym("s_q0", "Motor_Run", MemArea::Coil, 0, DataType::Bool, "Motor run output"),
-        sym("s_q1", "Delay_Done", MemArea::Coil, 1, DataType::Bool, "TON done"),
-        sym("s_q2", "Count_Done", MemArea::Coil, 2, DataType::Bool, "CTU done"),
-        sym("s_q3", "Cmp_Ok", MemArea::Coil, 3, DataType::Bool, "Compare result"),
-        sym("s_mw0", "Timer_ET", MemArea::Holding, 0, DataType::Word, "Timer elapsed (ms)"),
-        sym("s_mw40", "Setpoint", MemArea::Holding, 40, DataType::Word, "Compare A"),
-        sym("s_mw41", "Actual", MemArea::Holding, 41, DataType::Word, "Compare B"),
-        sym("s_mw42", "Result", MemArea::Holding, 42, DataType::Word, "MOVE destination"),
+        sym(
+            "s_i0",
+            "Start_PB",
+            MemArea::Discrete,
+            0,
+            DataType::Bool,
+            "Start pushbutton",
+        ),
+        sym(
+            "s_i1",
+            "Stop_PB",
+            MemArea::Discrete,
+            1,
+            DataType::Bool,
+            "Stop pushbutton (NC logic)",
+        ),
+        sym(
+            "s_i2",
+            "Count_Pulse",
+            MemArea::Discrete,
+            2,
+            DataType::Bool,
+            "Counter pulse",
+        ),
+        sym(
+            "s_i3",
+            "Count_Reset",
+            MemArea::Discrete,
+            3,
+            DataType::Bool,
+            "Counter reset",
+        ),
+        sym(
+            "s_q0",
+            "Motor_Run",
+            MemArea::Coil,
+            0,
+            DataType::Bool,
+            "Motor run output",
+        ),
+        sym(
+            "s_q1",
+            "Delay_Done",
+            MemArea::Coil,
+            1,
+            DataType::Bool,
+            "TON done",
+        ),
+        sym(
+            "s_q2",
+            "Count_Done",
+            MemArea::Coil,
+            2,
+            DataType::Bool,
+            "CTU done",
+        ),
+        sym(
+            "s_q3",
+            "Cmp_Ok",
+            MemArea::Coil,
+            3,
+            DataType::Bool,
+            "Compare result",
+        ),
+        sym(
+            "s_mw0",
+            "Timer_ET",
+            MemArea::Holding,
+            0,
+            DataType::Word,
+            "Timer elapsed (ms)",
+        ),
+        sym(
+            "s_mw40",
+            "Setpoint",
+            MemArea::Holding,
+            40,
+            DataType::Word,
+            "Compare A",
+        ),
+        sym(
+            "s_mw41",
+            "Actual",
+            MemArea::Holding,
+            41,
+            DataType::Word,
+            "Compare B",
+        ),
+        sym(
+            "s_mw42",
+            "Result",
+            MemArea::Holding,
+            42,
+            DataType::Word,
+            "MOVE destination",
+        ),
     ]
 }
 
@@ -120,5 +206,57 @@ fn sym(
         data_type,
         comment: comment.into(),
         address_display,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_are_populated() {
+        let t = SymbolTable::new();
+        assert!(!t.list().is_empty());
+        assert_eq!(t.snapshot().symbols.len(), t.list().len());
+    }
+
+    #[test]
+    fn upsert_updates_in_place_by_id_then_by_name() {
+        let t = SymbolTable::new();
+        t.set_all(vec![]);
+        assert!(t.list().is_empty());
+
+        let s = sym("s1", "Motor", MemArea::Coil, 0, DataType::Bool, "");
+        t.upsert(s.clone());
+        assert_eq!(t.list().len(), 1);
+
+        // Same id → replace in place.
+        let mut renamed = s.clone();
+        renamed.name = "Motor_Run".into();
+        t.upsert(renamed);
+        assert_eq!(t.list().len(), 1);
+        assert_eq!(t.list()[0].name, "Motor_Run");
+
+        // Different id but matching name → still replaces (name is unique key too).
+        let by_name = sym("s2", "Motor_Run", MemArea::Coil, 7, DataType::Bool, "");
+        t.upsert(by_name);
+        assert_eq!(t.list().len(), 1);
+        assert_eq!(t.list()[0].index, 7);
+    }
+
+    #[test]
+    fn remove_reports_whether_anything_was_deleted() {
+        let t = SymbolTable::new();
+        t.set_all(vec![sym(
+            "s1",
+            "Tag",
+            MemArea::Holding,
+            3,
+            DataType::Word,
+            "",
+        )]);
+        assert!(t.remove("s1"));
+        assert!(t.list().is_empty());
+        assert!(!t.remove("missing"));
     }
 }

@@ -40,11 +40,27 @@ export interface ElementDefinition<K extends ElementType = ElementType> {
   bottomLabel: (el: Extract<LadderElement, { type: K }>, fmt: AddressFormatter) => string;
 }
 
-export type ElementGlyph = Component<ElementRenderProps>;
+export type ElementGlyph<K extends ElementType = ElementType> = Component<
+  ElementRenderProps<Extract<LadderElement, { type: K }>>
+>;
+
+export type RuntimeElementGlyph = Component<ElementRenderProps<LadderElement>>;
+
+export interface RuntimeElementDefinition {
+  kind: ElementType;
+  category: ElementCategory;
+  label: string;
+  shortLabel: string;
+  help: string;
+  cellClass: CellClass;
+  create: () => LadderElement;
+  topLabel: (el: LadderElement, fmt: AddressFormatter) => string;
+  bottomLabel: (el: LadderElement, fmt: AddressFormatter) => string;
+}
 
 export interface RegistryEntry {
-  def: ElementDefinition;
-  Glyph: ElementGlyph;
+  def: RuntimeElementDefinition;
+  Glyph: RuntimeElementGlyph;
 }
 
 export const CATEGORY_TITLES: Record<ElementCategory, string> = {

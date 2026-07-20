@@ -103,7 +103,7 @@ npm run check   # Svelte/TS check
 
 | Symptom | Action |
 |---------|--------|
-| Port 5020 in use | Free the port or change default in `src-tauri/src/plc/modbus.rs` |
+| Port 5020 in use | Free the local port or change default in `src-tauri/src/plc/modbus.rs` |
 | UI shows mock / no live scan | Use `npm run tauri:dev`, not Vite alone |
 | Blank window | Check Vite port **1420** conflicts |
 | macOS Gatekeeper on downloaded app | Unsigned OSS builds — see [RELEASES.md](./RELEASES.md) |

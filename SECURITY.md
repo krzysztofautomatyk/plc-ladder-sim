@@ -27,8 +27,8 @@ We aim to acknowledge reports within a reasonable time and coordinate disclosure
 
 This application is a **desktop ladder-logic simulator** with an optional **Modbus TCP slave** for lab / training / SCADA integration demos.
 
-- Default Modbus bind is typically **port 5020** (non-privileged). Treat it as a **lab service**, not a hardened field device.
-- File-system capabilities may allow read/write under user document/home paths for import/export. Review `src-tauri/capabilities/default.json` before production-like deployment.
+- Default Modbus bind is **127.0.0.1:5020** (non-privileged) and Modbus writes are disabled until explicitly enabled. Treat it as a **lab service**, not a hardened field device.
+- Import/export uses browser file APIs; the default Tauri capability profile does **not** grant broad native filesystem read/write permissions.
 - Prebuilt installers from GitHub Releases are **unsigned** in v1.0 (no Apple notarization / Windows Authenticode unless maintainers add certificates later). Operating systems may show trust warnings.
 
 ## Safety disclaimer

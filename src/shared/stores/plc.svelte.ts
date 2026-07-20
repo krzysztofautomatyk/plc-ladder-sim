@@ -4,6 +4,7 @@
 import { api, listenFault, listenMemory, listenScanTick } from "../lib/api";
 import { createDemoProgram, uid } from "../lib/demoProgram";
 import { createElement } from "../../features/ladder/elements";
+import { SvelteSet } from "svelte/reactivity";
 import type {
   AppView,
   LadderElement,
@@ -39,12 +40,20 @@ function ensureOr(r: Rung): Rung {
   return { ...r, or_branches: r.or_branches ?? [] };
 }
 
+/** Replace the contents of a reactive set in place (keeps the same instance). */
+function syncSet(target: SvelteSet<string>, values: string[]): void {
+  target.clear();
+  for (const v of values) target.add(v);
+}
+
 class PlcStore {
   program = $state<LadderProgram>(createDemoProgram());
   memory = $state<MemorySnapshot>(emptyMemory());
   status = $state<SimStatus | null>(null);
-  activeElements = $state<Set<string>>(new Set());
-  activeRungs = $state<Set<string>>(new Set());
+  // Reactive sets: a single SvelteSet instance mutated in place keeps power-flow
+  // highlighting reactive without relying on whole-object reassignment.
+  activeElements = new SvelteSet<string>();
+  activeRungs = new SvelteSet<string>();
   selectedRungId = $state<string | null>(null);
   message = $state<string>("");
   busy = $state(false);
@@ -55,7 +64,8 @@ class PlcStore {
     enabled: false,
     running: false,
     port: 5020,
-    bind: "0.0.0.0",
+    bind: "127.0.0.1",
+    write_enabled: false,
     last_error: "",
   });
   modbusMap = $state<ModbusMapSnapshot>({ entries: [], identity_fallback: true });
@@ -90,8 +100,8 @@ class PlcStore {
     this.unsubs.push(
       await listenScanTick((payload) => {
         const t = payload as ScanTickEvent;
-        this.activeElements = new Set(t.active_elements ?? []);
-        this.activeRungs = new Set(t.active_rungs ?? []);
+        syncSet(this.activeElements, t.active_elements ?? []);
+        syncSet(this.activeRungs, t.active_rungs ?? []);
         if (this.status) {
           this.status = {
             ...this.status,
@@ -158,8 +168,8 @@ class PlcStore {
     const res = await api.stop();
     if (res.ok && res.data) {
       this.status = res.data;
-      this.activeElements = new Set();
-      this.activeRungs = new Set();
+      this.activeElements.clear();
+      this.activeRungs.clear();
       this.message = "Simulation STOP";
     } else {
       this.message = res.error ?? "stop failed";
@@ -243,6 +253,17 @@ class PlcStore {
       this.message = `Modbus port → ${port}`;
     } else {
       this.message = res.error ?? "set port failed";
+      await this.refreshModbus();
+    }
+  }
+
+  async setModbusWriteEnabled(allow: boolean) {
+    const res = await api.setModbusWriteEnabled(allow);
+    if (res.ok && res.data) {
+      this.modbus = res.data;
+      this.message = allow ? "Modbus writes enabled" : "Modbus read-only";
+    } else {
+      this.message = res.error ?? "set Modbus write mode failed";
       await this.refreshModbus();
     }
   }
@@ -493,7 +514,7 @@ class PlcStore {
       this.editingElement = { ...element } as LadderElement;
     }
     this.dialogOpen = true;
-    this.message = `Edycja: ${element.type}`;
+    this.message = `Editing: ${element.type}`;
   }
 
   closeElementEditor() {

@@ -19,22 +19,26 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.2.0",
-    "@tauri-apps/plugin-dialog": "^2.2.0",
-    "@tauri-apps/plugin-fs": "^2.2.0"
+    "@tauri-apps/api": "^2.2.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@tauri-apps/cli": "^2.2.0",
     "@tsconfig/svelte": "^5.0.4",
+    "@types/node": "^26.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "svelte": "^5.19.0",
     "svelte-check": "^4.1.4",
     "typescript": "^5.7.3",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^4.1.10"
   }
 }

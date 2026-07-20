@@ -5,7 +5,6 @@
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::compiler::MemArea;
@@ -73,16 +72,8 @@ impl ModbusMap {
         *self.identity_fallback.write() = snap.identity_fallback;
     }
 
-    pub fn identity_fallback(&self) -> bool {
-        *self.identity_fallback.read()
-    }
-
     /// Resolve Modbus coil/discrete address to PLC bit (area, index).
-    pub fn resolve_bit(
-        &self,
-        table: ModbusTable,
-        modbus_addr: u16,
-    ) -> Option<(MemArea, u16)> {
+    pub fn resolve_bit(&self, table: ModbusTable, modbus_addr: u16) -> Option<(MemArea, u16)> {
         let entries = self.entries.read();
         for e in entries.iter() {
             if e.enabled && e.modbus_table == table && e.modbus_address == modbus_addr {
@@ -101,11 +92,7 @@ impl ModbusMap {
     }
 
     /// Resolve Modbus register address to PLC word.
-    pub fn resolve_reg(
-        &self,
-        table: ModbusTable,
-        modbus_addr: u16,
-    ) -> Option<(MemArea, u16)> {
+    pub fn resolve_reg(&self, table: ModbusTable, modbus_addr: u16) -> Option<(MemArea, u16)> {
         let entries = self.entries.read();
         for e in entries.iter() {
             if e.enabled && e.modbus_table == table && e.modbus_address == modbus_addr {
@@ -121,17 +108,6 @@ impl ModbusMap {
             return Some((area, modbus_addr));
         }
         None
-    }
-
-    /// Build enabled-address set for range validation (optional).
-    pub fn enabled_modbus_addrs(&self, table: ModbusTable) -> HashMap<u16, (MemArea, u16)> {
-        let mut m = HashMap::new();
-        for e in self.entries.read().iter() {
-            if e.enabled && e.modbus_table == table {
-                m.insert(e.modbus_address, (e.plc_area, e.plc_index));
-            }
-        }
-        m
     }
 }
 

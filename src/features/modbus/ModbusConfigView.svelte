@@ -84,6 +84,14 @@
         </label>
         <button type="button" class="tia-btn" onclick={applyPort}>Apply port</button>
         <div class="tia-sep" style="width:1px;height:24px;background:var(--tia-border)"></div>
+        <label title="Modbus is read-only until this is enabled explicitly.">
+          <input
+            type="checkbox"
+            checked={plc.modbus.write_enabled}
+            onchange={(e) => plc.setModbusWriteEnabled(e.currentTarget.checked)}
+          />
+          Allow SCADA writes
+        </label>
         {#if plc.modbus.running}
           <span class="tia-badge modbus-on">LISTENING :{plc.modbus.port}</span>
           <button type="button" class="tia-btn tia-btn-stop" onclick={() => plc.stopModbus()}
@@ -102,7 +110,8 @@
         </p>
       {/if}
       <p style="margin:10px 0 0;font-size:11px;color:var(--tia-muted)">
-        Bind: {plc.modbus.bind || "0.0.0.0"} · SCADA: host machine IP, Unit ID any · default map identity
+        Bind: {plc.modbus.bind || "127.0.0.1"} · local SCADA only by default · writes
+        {plc.modbus.write_enabled ? "enabled" : "read-only"} · Unit ID any · default map identity
         when fallback enabled.
       </p>
     </section>

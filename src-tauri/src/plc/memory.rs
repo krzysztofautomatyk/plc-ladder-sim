@@ -15,18 +15,13 @@ pub const HOLDING_REGISTER_COUNT: usize = 1024;
 pub const INPUT_REGISTER_COUNT: usize = 1024;
 
 /// Runtime status exposed to UI / Modbus diagnostic registers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlcRunState {
+    #[default]
     Stop,
     Run,
     Fault,
-}
-
-impl Default for PlcRunState {
-    fn default() -> Self {
-        Self::Stop
-    }
 }
 
 /// Full memory snapshot for frontend live view and export.
@@ -92,8 +87,8 @@ impl PlcMemory {
             scan_count: AtomicU64::new(0),
             last_scan_us: AtomicU64::new(0),
             cycle_ms: AtomicU32::new(20),
-            allow_modbus_write: AtomicBool::new(true),
-            program_hash: parking_lot::RwLock::new(String::from("0".repeat(64))),
+            allow_modbus_write: AtomicBool::new(false),
+            program_hash: parking_lot::RwLock::new("0".repeat(64)),
             program_version: parking_lot::RwLock::new(String::from("0.0.0")),
             fault_code: AtomicU32::new(0),
             fault_message: parking_lot::RwLock::new(String::new()),
@@ -113,28 +108,16 @@ impl PlcMemory {
         coils
             .get(addr as usize)
             .copied()
-            .ok_or(MemoryError::OutOfRange {
-                area: "coil",
-                addr,
-            })
+            .ok_or(MemoryError::OutOfRange { area: "coil", addr })
     }
 
     pub fn set_coil(&self, addr: u16, value: bool) -> Result<(), MemoryError> {
         let mut coils = self.coils.write();
-        let slot = coils.get_mut(addr as usize).ok_or(MemoryError::OutOfRange {
-            area: "coil",
-            addr,
-        })?;
+        let slot = coils
+            .get_mut(addr as usize)
+            .ok_or(MemoryError::OutOfRange { area: "coil", addr })?;
         *slot = value;
         Ok(())
-    }
-
-    pub fn read_coils(&self, start: u16, qty: u16) -> Result<Vec<bool>, MemoryError> {
-        self.read_bool_range(&self.coils, start, qty, "coil")
-    }
-
-    pub fn write_coils(&self, start: u16, values: &[bool]) -> Result<(), MemoryError> {
-        self.write_bool_range(&self.coils, start, values, "coil")
     }
 
     // -------------------------------------------------------------------------
@@ -161,10 +144,6 @@ impl PlcMemory {
         Ok(())
     }
 
-    pub fn read_discretes(&self, start: u16, qty: u16) -> Result<Vec<bool>, MemoryError> {
-        self.read_bool_range(&self.discrete_inputs, start, qty, "discrete_input")
-    }
-
     // -------------------------------------------------------------------------
     // Holding registers
     // -------------------------------------------------------------------------
@@ -189,14 +168,6 @@ impl PlcMemory {
         Ok(())
     }
 
-    pub fn read_holdings(&self, start: u16, qty: u16) -> Result<Vec<u16>, MemoryError> {
-        self.read_u16_range(&self.holding_registers, start, qty, "holding_register")
-    }
-
-    pub fn write_holdings(&self, start: u16, values: &[u16]) -> Result<(), MemoryError> {
-        self.write_u16_range(&self.holding_registers, start, values, "holding_register")
-    }
-
     // -------------------------------------------------------------------------
     // Input registers
     // -------------------------------------------------------------------------
@@ -219,10 +190,6 @@ impl PlcMemory {
         })?;
         *slot = value;
         Ok(())
-    }
-
-    pub fn read_input_regs(&self, start: u16, qty: u16) -> Result<Vec<u16>, MemoryError> {
-        self.read_u16_range(&self.input_registers, start, qty, "input_register")
     }
 
     // -------------------------------------------------------------------------
@@ -336,11 +303,20 @@ impl PlcMemory {
     }
 
     pub fn snapshot(&self) -> MemorySnapshot {
+        // Acquire all four process-image locks together in a fixed order so the
+        // snapshot is a *coherent* image: coils and registers are cloned while
+        // every area is held, so a concurrent single-area write can never tear
+        // the snapshot across areas. Writers only ever take one area lock at a
+        // time, so this ordering cannot deadlock.
+        let coils = self.coils.read();
+        let discrete_inputs = self.discrete_inputs.read();
+        let holding_registers = self.holding_registers.read();
+        let input_registers = self.input_registers.read();
         MemorySnapshot {
-            coils: self.coils.read().clone(),
-            discrete_inputs: self.discrete_inputs.read().clone(),
-            holding_registers: self.holding_registers.read().clone(),
-            input_registers: self.input_registers.read().clone(),
+            coils: coils.clone(),
+            discrete_inputs: discrete_inputs.clone(),
+            holding_registers: holding_registers.clone(),
+            input_registers: input_registers.clone(),
             run_state: self.run_state(),
             scan_count: self.scan_count(),
             last_scan_us: self.last_scan_us(),
@@ -359,99 +335,13 @@ impl PlcMemory {
             coils: full.coils.into_iter().take(coil_n).collect(),
             discrete_inputs: full.discrete_inputs.into_iter().take(coil_n).collect(),
             holding_registers: full.holding_registers.into_iter().take(reg_n).collect(),
-            input_registers: full.input_registers.into_iter().take(reg_n.min(16)).collect(),
+            input_registers: full
+                .input_registers
+                .into_iter()
+                .take(reg_n.min(16))
+                .collect(),
             ..full
         }
-    }
-
-    // -------------------------------------------------------------------------
-    // Internal helpers
-    // -------------------------------------------------------------------------
-
-    fn read_bool_range(
-        &self,
-        lock: &parking_lot::RwLock<Vec<bool>>,
-        start: u16,
-        qty: u16,
-        area: &'static str,
-    ) -> Result<Vec<bool>, MemoryError> {
-        if qty == 0 {
-            return Ok(Vec::new());
-        }
-        let data = lock.read();
-        let start_u = start as usize;
-        let end = start_u
-            .checked_add(qty as usize)
-            .ok_or(MemoryError::Overflow)?;
-        if end > data.len() {
-            return Err(MemoryError::OutOfRange { area, addr: start });
-        }
-        Ok(data[start_u..end].to_vec())
-    }
-
-    fn write_bool_range(
-        &self,
-        lock: &parking_lot::RwLock<Vec<bool>>,
-        start: u16,
-        values: &[bool],
-        area: &'static str,
-    ) -> Result<(), MemoryError> {
-        if values.is_empty() {
-            return Ok(());
-        }
-        let mut data = lock.write();
-        let start_u = start as usize;
-        let end = start_u
-            .checked_add(values.len())
-            .ok_or(MemoryError::Overflow)?;
-        if end > data.len() {
-            return Err(MemoryError::OutOfRange { area, addr: start });
-        }
-        data[start_u..end].copy_from_slice(values);
-        Ok(())
-    }
-
-    fn read_u16_range(
-        &self,
-        lock: &parking_lot::RwLock<Vec<u16>>,
-        start: u16,
-        qty: u16,
-        area: &'static str,
-    ) -> Result<Vec<u16>, MemoryError> {
-        if qty == 0 {
-            return Ok(Vec::new());
-        }
-        let data = lock.read();
-        let start_u = start as usize;
-        let end = start_u
-            .checked_add(qty as usize)
-            .ok_or(MemoryError::Overflow)?;
-        if end > data.len() {
-            return Err(MemoryError::OutOfRange { area, addr: start });
-        }
-        Ok(data[start_u..end].to_vec())
-    }
-
-    fn write_u16_range(
-        &self,
-        lock: &parking_lot::RwLock<Vec<u16>>,
-        start: u16,
-        values: &[u16],
-        area: &'static str,
-    ) -> Result<(), MemoryError> {
-        if values.is_empty() {
-            return Ok(());
-        }
-        let mut data = lock.write();
-        let start_u = start as usize;
-        let end = start_u
-            .checked_add(values.len())
-            .ok_or(MemoryError::Overflow)?;
-        if end > data.len() {
-            return Err(MemoryError::OutOfRange { area, addr: start });
-        }
-        data[start_u..end].copy_from_slice(values);
-        Ok(())
     }
 }
 
@@ -459,8 +349,6 @@ impl PlcMemory {
 pub enum MemoryError {
     #[error("address out of range in {area}: {addr}")]
     OutOfRange { area: &'static str, addr: u16 },
-    #[error("address arithmetic overflow")]
-    Overflow,
 }
 
 #[cfg(test)]
@@ -488,5 +376,50 @@ mod tests {
         assert_eq!(m.cycle_ms(), 5);
         m.set_cycle_ms(500);
         assert_eq!(m.cycle_ms(), 100);
+    }
+
+    #[test]
+    fn snapshot_is_coherent_across_areas() {
+        let m = PlcMemory::new();
+        m.set_coil(1, true).unwrap();
+        m.set_discrete(2, true).unwrap();
+        m.set_holding(3, 0xBEEF).unwrap();
+        m.set_input_reg(4, 0x1234).unwrap();
+
+        let snap = m.snapshot();
+        assert_eq!(snap.coils.len(), COIL_COUNT);
+        assert_eq!(snap.discrete_inputs.len(), DISCRETE_INPUT_COUNT);
+        assert_eq!(snap.holding_registers.len(), HOLDING_REGISTER_COUNT);
+        assert_eq!(snap.input_registers.len(), INPUT_REGISTER_COUNT);
+        assert!(snap.coils[1]);
+        assert!(snap.discrete_inputs[2]);
+        assert_eq!(snap.holding_registers[3], 0xBEEF);
+        assert_eq!(snap.input_registers[4], 0x1234);
+    }
+
+    #[test]
+    fn concurrent_writes_never_deadlock_snapshot() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let m = PlcMemory::new().into_arc();
+        let stop = Arc::new(AtomicBool::new(false));
+
+        let mw = Arc::clone(&m);
+        let sw = Arc::clone(&stop);
+        let writer = std::thread::spawn(move || {
+            let mut i: u16 = 0;
+            while !sw.load(Ordering::Relaxed) {
+                let _ = mw.set_coil(i % 64, i % 2 == 0);
+                let _ = mw.set_holding(i % 64, i);
+                i = i.wrapping_add(1);
+            }
+        });
+
+        // Many snapshots concurrent with writes must always complete.
+        for _ in 0..2000 {
+            let s = m.snapshot();
+            assert_eq!(s.coils.len(), COIL_COUNT);
+        }
+        stop.store(true, Ordering::Relaxed);
+        writer.join().unwrap();
     }
 }

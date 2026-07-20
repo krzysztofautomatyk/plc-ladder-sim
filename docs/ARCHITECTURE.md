@@ -108,10 +108,32 @@ src-tauri/src/
 | `plc://memory` | Memory snapshot |
 | `plc://fault` | Fault stop |
 
+## Scan semantics
+
+The engine follows the IEC 61131-3 cyclic model with one **documented, deliberate**
+refinement:
+
+- **Discrete inputs (I) and input registers (IW)** are captured **once** into a
+  frozen process-image at the start of every scan (`ScanInputImage::capture`).
+  All contact reads within the scan see this stable snapshot.
+- **Coils (Q) and holding markers (M/R)** are read **live** during rung
+  evaluation. This is intentional: it lets an output referenced later in the same
+  scan (e.g. an OR **seal-in** of `Q0`) reflect the value just written, which is
+  the behaviour operators expect from a teaching simulator. It is a conscious
+  divergence from controllers that snapshot the *entire* image; it is safe here
+  because outputs are single-writer within a scan.
+- `PlcMemory::snapshot()` takes all four process-image locks together, so the
+  image exposed to the UI / Modbus is **coherent** across areas.
+
 ## Quality notes
 
-- User-logic faults (e.g. divide-by-zero) → **FAULT / STOP** (no panic in scan path)
-- Program integrity: SHA-256 of compiled bytecode
-- Release profile: LTO, `panic = "abort"`, stripped symbols
+- User-logic faults (e.g. divide-by-zero, arithmetic overflow, out-of-range
+  address) → **FAULT / STOP** with a typed `ScanError` — **never a panic** in the
+  scan path (verified by a deterministic fuzz sweep in the engine tests).
+- Program integrity: SHA-256 of compiled bytecode.
+- **Audit trail spans restarts:** the SHA-256 hash chain is mirrored to an
+  append-only `audit_trail.jsonl` and **restored + re-verified on startup**
+  (`AuditTrail::load_persisted`), so tamper-evidence is not reset each session.
+- Release profile: LTO, `panic = "abort"`, stripped symbols.
 
 **Not certified** for safety-critical or clinical use — see [SECURITY.md](../SECURITY.md).

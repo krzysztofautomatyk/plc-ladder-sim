@@ -57,7 +57,8 @@ function mockInvoke<T>(cmd: string, _args?: Record<string, unknown>): CommandRes
         enabled: false,
         running: false,
         port: 5020,
-        bind: "0.0.0.0",
+        bind: "127.0.0.1",
+        write_enabled: false,
         last_error: "",
       } as T,
     };
@@ -125,6 +126,8 @@ export const api = {
   startModbus: () => invoke<ModbusStatus>("start_modbus"),
   stopModbus: () => invoke<ModbusStatus>("stop_modbus"),
   setModbusPort: (port: number) => invoke<ModbusStatus>("set_modbus_port", { port }),
+  setModbusWriteEnabled: (allow: boolean) =>
+    invoke<ModbusStatus>("set_modbus_write_enabled", { allow }),
   getModbusMap: () => invoke<ModbusMapSnapshot>("get_modbus_map"),
   setModbusMap: (map: ModbusMapSnapshot) =>
     invoke<ModbusMapSnapshot>("set_modbus_map", { map }),

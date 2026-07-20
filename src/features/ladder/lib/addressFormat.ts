@@ -137,59 +137,59 @@ export function formToAddress(
 }
 
 export const ADDRESS_HELP_MD = `
-# Adresacja zmiennych PLC
+# PLC variable addressing
 
-## Prefiksy
+## Prefixes
 
-| Prefiks | Znaczenie | Przykłady |
+| Prefix | Meaning | Examples |
 |---------|-----------|-----------|
-| **I** | Wejście dyskretne (Input) | \`I0\`, \`I12\` |
-| **Q** | Wyjście / cewka (Output) | \`Q0\`, \`Q3\` |
-| **M** | Znacznik bitowy (Memory bit) | \`M0\`, \`M2.5\` |
-| **R** | Rejestr słowny (Register / MW) | \`R10\`, \`R1.3\` |
+| **I** | Discrete input | \`I0\`, \`I12\` |
+| **Q** | Output / coil | \`Q0\`, \`Q3\` |
+| **M** | Memory bit | \`M0\`, \`M2.5\` |
+| **R** | Word register (Register / MW) | \`R10\`, \`R1.3\` |
 
-## Składnia bitu w rejestrze
+## Register bit syntax
 
 \`\`\`
-R<numer_rejestru>.<numer_bitu>
+R<register_number>.<bit_number>
 \`\`\`
 
-- Numer bitu: **0–15** (słowo 16-bitowe)
-- Przykład: \`R1.0\` = bit 0 rejestru R1, \`R1.15\` = bit 15
+- Bit number: **0–15** (16-bit word)
+- Example: \`R1.0\` = bit 0 of register R1, \`R1.15\` = bit 15
 
-## Mapowanie na pamięć symulatora
+## Simulator memory mapping
 
-| Prefiks | Obszar pamięci |
+| Prefix | Memory area |
 |---------|----------------|
 | I | Discrete Inputs (1x / I) |
 | Q | Coils (0x / Q) |
-| M | Holding (4x) — dostęp bitowy |
-| R | Holding (4x) — słowo lub bit \`.x\` |
+| M | Holding (4x) — bit access |
+| R | Holding (4x) — word or \`.x\` bit |
 
-## Elementy drabinki
+## Ladder elements
 
-- **Styki / cewki** — zwykle **I**, **Q**, **M**, **R.n.x**
-- **Zbocze P (rising)** — impuls 1 skan przy 0→1
-- **Zbocze N (falling)** — impuls 1 skan przy 1→0
-- **SET (S)** — ustawia bit na 1 i trzyma (zatrzask), aż RESET
-- **RESET (R)** — kasuje bit na 0
-- **TON / CTU / Math** — rejestry **R** (słowa), wyjścia done na **Q** lub **M**
-- **MOVE / CMP** — operandy słowne **R**
+- **Contacts / coils** — usually **I**, **Q**, **M**, **R.n.x**
+- **P edge (rising)** — one-scan pulse on 0→1
+- **N edge (falling)** — one-scan pulse on 1→0
+- **SET (S)** — sets a bit to 1 and holds it until RESET
+- **RESET (R)** — clears a bit to 0
+- **TON / CTU / Math** — **R** registers (words), done outputs on **Q** or **M**
+- **MOVE / CMP** — **R** word operands
 
-## Przykłady
+## Examples
 
-| Zapis | Opis |
+| Syntax | Description |
 |-------|------|
-| \`I0\` | Start na wejściu 0 |
-| \`Q0\` | Cewka wyjścia 0 |
-| \`M5.2\` | Bit 2 znacznika w R5 |
-| \`R20\` | Słowo MW20 (setpoint) |
-| \`R1.7\` | Bit 7 w rejestrze 1 |
+| \`I0\` | Start on input 0 |
+| \`Q0\` | Output coil 0 |
+| \`M5.2\` | Marker bit 2 in R5 |
+| \`R20\` | MW20 word (setpoint) |
+| \`R1.7\` | Bit 7 in register 1 |
 
-## Wskazówki
+## Tips
 
-1. Kliknij element drabinki, aby otworzyć to okno.
-2. Wybierz prefix (I/Q/M/R), numer i opcjonalnie bit.
-3. Możesz też wpisać adres ręcznie w polu **Szybki adres** (np. \`R1.3\`).
-4. **Apply** zapisuje i aktualizuje program (Compile & Load zalecane).
+1. Click a ladder element to open this window.
+2. Choose a prefix (I/Q/M/R), number, and optional bit.
+3. You can also type an address manually in the **Quick address** field (e.g. \`R1.3\`).
+4. **Apply** saves the element and updates the program (Compile & Load recommended).
 `.trim();

@@ -6,10 +6,11 @@ Lab-oriented Modbus TCP **slave** for SCADA / HMI integration.
 
 | Parameter | Value |
 |-----------|--------|
-| Host | `127.0.0.1` (or machine IP) |
+| Host | `127.0.0.1` |
 | Port | **5020** (non-root alternative to 502) |
 | Unit ID | any / default |
-| Bind | typically `0.0.0.0:5020` |
+| Bind | `127.0.0.1:5020` by default |
+| Writes | **disabled by default**; enable explicitly in the Modbus view |
 
 Enable/port may be configurable from the app UI (Modbus view).
 
@@ -43,9 +44,9 @@ Typical support via `tokio-modbus` server path: **FC 01–06, 15, 16** (coils, d
 
 ## SCADA notes
 
-- Masters write **coils** and **holding registers**.
+- Masters can write **coils** and **holding registers** only after **Allow SCADA writes** is enabled in the UI.
 - Discrete inputs and input registers are **read-only** from the master; force **I** bits from the UI process image for simulation.
-- Example tools: Fuxa, Ignition, SCADA-BR — device host `127.0.0.1`, port `5020`.
+- Example tools: Fuxa, Ignition, SCADA-BR on the same machine — device host `127.0.0.1`, port `5020`.
 
 ## Port conflict
 
@@ -57,4 +58,4 @@ Change default in `src-tauri/src/plc/modbus.rs` if needed, then rebuild.
 
 ## Security
 
-Exposing Modbus on a network is a lab convenience. Do not treat this stack as a hardened field PLC. See [SECURITY.md](../SECURITY.md).
+Modbus is bound to localhost and read-only by default. Exposing it on a network or enabling writes is a lab convenience only; do not treat this stack as a hardened field PLC. See [SECURITY.md](../SECURITY.md).

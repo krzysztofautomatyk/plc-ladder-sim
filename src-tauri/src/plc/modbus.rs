@@ -20,7 +20,7 @@ use tokio_modbus::server::Service;
 use tracing::{error, info, warn};
 
 pub const DEFAULT_MODBUS_PORT: u16 = 5020;
-pub const DEFAULT_MODBUS_BIND: &str = "0.0.0.0";
+pub const DEFAULT_MODBUS_BIND: &str = "127.0.0.1";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModbusStatus {
@@ -28,6 +28,7 @@ pub struct ModbusStatus {
     pub running: bool,
     pub port: u16,
     pub bind: String,
+    pub write_enabled: bool,
     pub last_error: String,
 }
 
@@ -318,6 +319,7 @@ impl ModbusController {
             running: self.running.load(Ordering::SeqCst),
             port: self.port.load(Ordering::SeqCst),
             bind: DEFAULT_MODBUS_BIND.into(),
+            write_enabled: self.memory.allow_modbus_write(),
             last_error: self.last_error.lock().clone(),
         }
     }
@@ -326,6 +328,7 @@ impl ModbusController {
         if port == 0 {
             return Err("port must be 1–65535".into());
         }
+
         let was_running = self.running.load(Ordering::SeqCst);
         if was_running {
             self.stop_internal();
@@ -399,11 +402,10 @@ impl ModbusController {
                 let map = Arc::clone(&map);
                 async move {
                     info!(%socket_addr, "Modbus client connected");
-                    let service = PlcModbusService {
-                        memory: mem,
-                        map,
-                    };
-                    accept_tcp_connection(stream, socket_addr, move |_addr| Ok(Some(service.clone())))
+                    let service = PlcModbusService { memory: mem, map };
+                    accept_tcp_connection(stream, socket_addr, move |_addr| {
+                        Ok(Some(service.clone()))
+                    })
                 }
             };
 
@@ -416,6 +418,7 @@ impl ModbusController {
                         *this.last_error.lock() = e.to_string();
                     }
                 }
+
                 _ = rx => {
                     info!("Modbus server abort signal received");
                 }
@@ -432,5 +435,192 @@ impl ModbusController {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_requests_require_explicit_enable() {
+        let memory = PlcMemory::new().into_arc();
+        let map = ModbusMap::new();
+
+        let err = handle_request(&memory, &map, Request::WriteSingleCoil(0, true)).unwrap_err();
+        assert_eq!(err, ExceptionCode::ServerDeviceFailure);
+        assert!(!memory.get_coil(0).unwrap());
+
+        memory.set_allow_modbus_write(true);
+        handle_request(&memory, &map, Request::WriteSingleCoil(0, true)).unwrap();
+        assert!(memory.get_coil(0).unwrap());
+    }
+
+    #[test]
+    fn reads_resolve_all_tables_via_identity_map() {
+        let memory = PlcMemory::new().into_arc();
+        let map = ModbusMap::new();
+        memory.set_coil(5, true).unwrap();
+        memory.set_discrete(6, true).unwrap();
+        memory.set_holding(7, 0xABCD).unwrap();
+        memory.set_input_reg(2, 0x0042).unwrap();
+
+        match handle_request(&memory, &map, Request::ReadCoils(5, 1)).unwrap() {
+            Response::ReadCoils(bits) => assert_eq!(bits, vec![true]),
+            other => panic!("unexpected {other:?}"),
+        }
+        match handle_request(&memory, &map, Request::ReadDiscreteInputs(6, 1)).unwrap() {
+            Response::ReadDiscreteInputs(bits) => assert_eq!(bits, vec![true]),
+            other => panic!("unexpected {other:?}"),
+        }
+        match handle_request(&memory, &map, Request::ReadHoldingRegisters(7, 1)).unwrap() {
+            Response::ReadHoldingRegisters(regs) => assert_eq!(regs, vec![0xABCD]),
+            other => panic!("unexpected {other:?}"),
+        }
+        match handle_request(&memory, &map, Request::ReadInputRegisters(2, 1)).unwrap() {
+            Response::ReadInputRegisters(regs) => assert_eq!(regs, vec![0x0042]),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn quantity_limits_are_enforced() {
+        let memory = PlcMemory::new().into_arc();
+        let map = ModbusMap::new();
+
+        // Zero quantity is illegal for every read.
+        for req in [
+            Request::ReadCoils(0, 0),
+            Request::ReadDiscreteInputs(0, 0),
+            Request::ReadHoldingRegisters(0, 0),
+            Request::ReadInputRegisters(0, 0),
+        ] {
+            assert_eq!(
+                handle_request(&memory, &map, req).unwrap_err(),
+                ExceptionCode::IllegalDataValue
+            );
+        }
+
+        // Over-limit quantities per Modbus spec (2000 bits / 125 regs).
+        assert_eq!(
+            handle_request(&memory, &map, Request::ReadCoils(0, 2001)).unwrap_err(),
+            ExceptionCode::IllegalDataValue
+        );
+        assert_eq!(
+            handle_request(&memory, &map, Request::ReadHoldingRegisters(0, 126)).unwrap_err(),
+            ExceptionCode::IllegalDataValue
+        );
+    }
+
+    #[test]
+    fn unsupported_function_yields_illegal_function() {
+        let memory = PlcMemory::new().into_arc();
+        let map = ModbusMap::new();
+        let err = handle_request(
+            &memory,
+            &map,
+            Request::ReadWriteMultipleRegisters(0, 1, 0, std::borrow::Cow::Owned(vec![1])),
+        )
+        .unwrap_err();
+        assert_eq!(err, ExceptionCode::IllegalFunction);
+    }
+
+    #[test]
+    fn multiple_writes_require_enable_and_then_apply() {
+        let memory = PlcMemory::new().into_arc();
+        let map = ModbusMap::new();
+
+        // Disabled: rejected, memory untouched.
+        let err = handle_request(
+            &memory,
+            &map,
+            Request::WriteMultipleRegisters(40, std::borrow::Cow::Owned(vec![11, 22, 33])),
+        )
+        .unwrap_err();
+        assert_eq!(err, ExceptionCode::ServerDeviceFailure);
+        assert_eq!(memory.get_holding(40).unwrap(), 0);
+
+        // Enabled: applied.
+        memory.set_allow_modbus_write(true);
+        handle_request(
+            &memory,
+            &map,
+            Request::WriteMultipleRegisters(40, std::borrow::Cow::Owned(vec![11, 22, 33])),
+        )
+        .unwrap();
+        assert_eq!(memory.get_holding(40).unwrap(), 11);
+        assert_eq!(memory.get_holding(41).unwrap(), 22);
+        assert_eq!(memory.get_holding(42).unwrap(), 33);
+    }
+
+    /// Full network round-trip: real tokio-modbus client ↔ our TCP slave.
+    #[tokio::test]
+    async fn modbus_tcp_end_to_end_read_and_write_gate() {
+        use tokio_modbus::client::tcp::connect;
+        use tokio_modbus::client::{Reader, Writer};
+
+        let memory = PlcMemory::new().into_arc();
+        memory.set_holding(7, 4321).unwrap();
+        memory.set_discrete(3, true).unwrap();
+        let map = ModbusMap::new();
+
+        // Ephemeral port avoids conflicts with the real service / other tests.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let service = PlcModbusService {
+            memory: Arc::clone(&memory),
+            map: Arc::clone(&map),
+        };
+        let server = tokio::spawn(async move {
+            let server = Server::new(listener);
+            let on_connected = move |stream, socket_addr| {
+                let service = service.clone();
+                async move {
+                    accept_tcp_connection(stream, socket_addr, move |_addr| {
+                        Ok(Some(service.clone()))
+                    })
+                }
+            };
+            let _ = server.serve(&on_connected, |_err| {}).await;
+        });
+
+        let mut ctx = connect(addr).await.expect("client connect");
+
+        // Reads resolve through the identity map.
+        let regs = ctx
+            .read_holding_registers(7, 1)
+            .await
+            .expect("io")
+            .expect("modbus");
+        assert_eq!(regs, vec![4321]);
+        let bits = ctx
+            .read_discrete_inputs(3, 1)
+            .await
+            .expect("io")
+            .expect("modbus");
+        assert_eq!(bits, vec![true]);
+
+        // Write disabled by default → Modbus exception, memory unchanged.
+        let rejected = ctx.write_single_register(7, 999).await.expect("io");
+        assert!(rejected.is_err(), "write must be rejected while disabled");
+        assert_eq!(memory.get_holding(7).unwrap(), 4321);
+
+        // Enable → write now applies over the wire.
+        memory.set_allow_modbus_write(true);
+        ctx.write_single_register(7, 999)
+            .await
+            .expect("io")
+            .expect("modbus");
+        assert_eq!(memory.get_holding(7).unwrap(), 999);
+
+        ctx.write_single_coil(2, true)
+            .await
+            .expect("io")
+            .expect("modbus");
+        assert!(memory.get_coil(2).unwrap());
+
+        let _ = ctx.disconnect().await;
+        server.abort();
     }
 }

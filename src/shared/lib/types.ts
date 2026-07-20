@@ -184,6 +184,7 @@ export interface ModbusStatus {
   running: boolean;
   port: number;
   bind: string;
+  write_enabled: boolean;
   last_error: string;
 }
 
