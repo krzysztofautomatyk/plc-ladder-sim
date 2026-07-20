@@ -18,14 +18,16 @@ Workflow: [`.github/workflows/release.yml`](../.github/workflows/release.yml)
 
 | Trigger | Effect |
 |---------|--------|
-| Push tag `v*` (e.g. `v1.0.0`) | Build matrix → draft GitHub Release + assets |
+| Push tag `v*` (e.g. `v1.0.1`) | Build matrix → **public** GitHub Release + assets |
 | `workflow_dispatch` | Manual run (for maintainers) |
 
-Matrix runners:
+Matrix (aligned with ProjectToText):
 
-- `windows-latest`
-- `macos-latest`
-- `ubuntu-22.04`
+- `macos-latest` ×2 — `aarch64-apple-darwin` + `x86_64-apple-darwin`
+- `ubuntu-22.04` — `.deb` / `.AppImage`
+- `windows-latest` — `.msi` / `.exe`
+
+Releases are **published** (`releaseDraft: false`), so packages appear on the Releases page as soon as the first platform job finishes uploading.
 
 Uses [`tauri-apps/tauri-action`](https://github.com/tauri-apps/tauri-action).
 
@@ -37,11 +39,10 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-1. Wait for the **Release** workflow (all 3 OS jobs)
-2. Open the **draft** release on GitHub
-3. Review assets → **Publish release**
+1. Wait for the **Release** workflow (4 jobs: 2× macOS, Ubuntu, Windows)
+2. Open **https://github.com/krzysztofautomatyk/plc-ladder-sim/releases** — assets attach as jobs complete
 
-Version should match `package.json` / `src-tauri/tauri.conf.json` / `Cargo.toml` (`1.0.0` ↔ tag `v1.0.0`).
+Version should match `package.json` / `src-tauri/tauri.conf.json` / `Cargo.toml` (e.g. `1.0.1` ↔ tag `v1.0.1`).
 
 ## Unsigned builds (v1)
 

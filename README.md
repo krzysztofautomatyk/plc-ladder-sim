@@ -3,6 +3,7 @@
 **Desktop PLC Ladder Diagram (LAD) editor and real-time simulator** with a built-in **Modbus TCP slave** for SCADA / lab integration.
 
 [![CI](https://github.com/krzysztofautomatyk/plc-ladder-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/krzysztofautomatyk/plc-ladder-sim/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/krzysztofautomatyk/plc-ladder-sim?include_prereleases&label=release)](https://github.com/krzysztofautomatyk/plc-ladder-sim/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri)](https://tauri.app)
 [![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte)](https://svelte.dev)
@@ -20,17 +21,21 @@
 
 ---
 
-## Download installers
+## Install
 
-Prebuilt packages for **Windows**, **macOS**, and **Linux** are published on GitHub Releases:
+### Prebuilt desktop apps (recommended)
 
-**→ [Releases](https://github.com/krzysztofautomatyk/plc-ladder-sim/releases)**
+Download the installer for your OS from the latest GitHub Release (same pattern as [ProjectToText](https://github.com/krzysztofautomatyk/ProjectToText/releases)):
 
-| Platform | Packages |
-|----------|----------|
-| Windows | `.msi`, `.exe` (NSIS) |
-| macOS | `.dmg` |
-| Linux | `.deb`, `.AppImage` |
+**→ [Releases](https://github.com/krzysztofautomatyk/plc-ladder-sim/releases/latest)**
+
+| Platform | Typical assets |
+|----------|----------------|
+| **Windows** | `.msi` / `.exe` (NSIS) |
+| **macOS** | `.dmg` (Apple Silicon + Intel) |
+| **Linux** | `.deb` / `.AppImage` |
+
+After install, launch **PLC Ladder Simulator Pro** from Applications / Start Menu.
 
 v1 builds are **unsigned** (expect Gatekeeper / SmartScreen prompts). Details: [docs/RELEASES.md](./docs/RELEASES.md).
 
