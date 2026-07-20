@@ -1,6 +1,6 @@
 # Releases & installers
 
-Prebuilt installers for **Windows**, **macOS**, and **Linux** are produced by GitHub Actions and attached to [GitHub Releases](https://github.com/YOUR_GITHUB_USER/plc-ladder-sim/releases).
+Prebuilt installers for **Windows**, **macOS**, and **Linux** are produced by GitHub Actions and attached to [GitHub Releases](https://github.com/krzysztofautomatyk/plc-ladder-sim/releases).
 
 ## Download matrix (v1)
 

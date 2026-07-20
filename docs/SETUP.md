@@ -36,7 +36,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ## 2. Install & run
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USER/plc-ladder-sim.git
+git clone https://github.com/krzysztofautomatyk/plc-ladder-sim.git
 cd plc-ladder-sim
 npm install
 npm run tauri:dev

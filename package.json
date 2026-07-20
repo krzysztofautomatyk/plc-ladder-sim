@@ -7,12 +7,12 @@
   "author": "PLC Ladder Simulator contributors",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_GITHUB_USER/plc-ladder-sim.git"
+    "url": "https://github.com/krzysztofautomatyk/plc-ladder-sim.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_GITHUB_USER/plc-ladder-sim/issues"
+    "url": "https://github.com/krzysztofautomatyk/plc-ladder-sim/issues"
   },
-  "homepage": "https://github.com/YOUR_GITHUB_USER/plc-ladder-sim#readme",
+  "homepage": "https://github.com/krzysztofautomatyk/plc-ladder-sim#readme",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -2,7 +2,7 @@
 
 **Desktop PLC Ladder Diagram (LAD) editor and real-time simulator** with a built-in **Modbus TCP slave** for SCADA / lab integration.
 
-[![CI](https://github.com/YOUR_GITHUB_USER/plc-ladder-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_GITHUB_USER/plc-ladder-sim/actions/workflows/ci.yml)
+[![CI](https://github.com/krzysztofautomatyk/plc-ladder-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/krzysztofautomatyk/plc-ladder-sim/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri)](https://tauri.app)
 [![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte)](https://svelte.dev)
@@ -24,7 +24,7 @@
 
 Prebuilt packages for **Windows**, **macOS**, and **Linux** are published on GitHub Releases:
 
-**→ [Releases](https://github.com/YOUR_GITHUB_USER/plc-ladder-sim/releases)**
+**→ [Releases](https://github.com/krzysztofautomatyk/plc-ladder-sim/releases)**
 
 | Platform | Packages |
 |----------|----------|
@@ -54,7 +54,7 @@ v1 builds are **unsigned** (expect Gatekeeper / SmartScreen prompts). Details: [
 ## Quick start (from source)
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USER/plc-ladder-sim.git
+git clone https://github.com/krzysztofautomatyk/plc-ladder-sim.git
 cd plc-ladder-sim
 npm install
 npm run tauri:dev
