@@ -1,0 +1,66 @@
+name: "Copilot Setup Steps"
+
+# Runs automatically when this file changes (for easy validation) and can be
+# triggered manually from the repository's "Actions" tab. GitHub Copilot's cloud
+# agent runs the `copilot-setup-steps` job before it starts working on a task.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be named `copilot-setup-steps` or Copilot will not pick it up.
+  copilot-setup-steps:
+    name: Copilot setup (Node + Rust + Tauri)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # Lowest permissions needed for the steps below. Copilot gets its own token.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Frontend toolchain (Svelte 5 + TypeScript + Vite) ──────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ── Backend toolchain (Rust + Tauri v2) ────────────────────────────────
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Linux Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # Warm the cargo cache by compiling the engine + all dependencies so the
+      # agent can immediately run `cargo test` / `cargo clippy` without waiting
+      # for a cold build. Non-blocking: a failure here won't stop the agent.
+      - name: Pre-build Rust engine and dependencies
+        working-directory: src-tauri
+        run: cargo build --all-features
