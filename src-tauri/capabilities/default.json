@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "default",
+  "description": "Minimal zero-trust capabilities for PLC Ladder Simulator Pro",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default",
+    "dialog:default",
+    "fs:default",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "$DOCUMENT/**" }, { "path": "$DOWNLOAD/**" }, { "path": "$HOME/**" }]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [{ "path": "$DOCUMENT/**" }, { "path": "$DOWNLOAD/**" }, { "path": "$HOME/**" }]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.npm
+.pnpm-store/
+
+# Frontend build
+dist/
+dist-ssr/
+*.local
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+**/*.rs.bk
+
+# Logs / env / secrets
+*.log
+logs/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Test / coverage / cache
+coverage/
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# Package manager noise
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+.pnp.*
+
+# Local release scratch
+release-artifacts/
+*.dmg
+*.AppImage
+*.msi
+*.exe
+!src-tauri/icons/**

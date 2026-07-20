@@ -1,0 +1,87 @@
+# Multi-platform installers → GitHub Release (draft)
+# Trigger: git tag v1.0.0 && git push origin v1.0.0
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-tauri:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: ""
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build installers & upload to Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', github.run_id) }}
+          releaseName: "PLC Ladder Simulator Pro ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', github.run_id) }}"
+          releaseBody: |
+            ## Installers
+
+            | Platform | Packages |
+            |----------|----------|
+            | Windows | `.msi`, `.exe` |
+            | macOS | `.dmg` |
+            | Linux | `.deb`, `.AppImage` |
+
+            **Unsigned OSS builds** — macOS Gatekeeper / Windows SmartScreen may warn.
+            See [docs/RELEASES.md](../blob/main/docs/RELEASES.md) for details.
+
+            ## Changelog
+
+            See commit history since the previous tag.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: false
+          args: ${{ matrix.args }}

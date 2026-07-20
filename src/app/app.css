@@ -1,0 +1,519 @@
+/* =============================================================================
+   TIA Portal–inspired industrial HMI theme (Siemens-like)
+   ============================================================================= */
+:root {
+  --tia-blue: #005f87;
+  --tia-blue-dark: #003d5c;
+  --tia-blue-mid: #007aaa;
+  --tia-teal: #009999;
+  --tia-header: #1a3a52;
+  --tia-toolbar: #e8eef2;
+  --tia-bg: #d4d8dc;
+  --tia-panel: #f0f2f4;
+  --tia-paper: #ffffff;
+  --tia-border: #9aa3ab;
+  --tia-border-light: #c5ccd2;
+  --tia-text: #1a1a1a;
+  --tia-muted: #5a6570;
+  --tia-select: #cce4f0;
+  --tia-select-border: #0078a8;
+  --tia-online: #00a651;
+  --tia-online-bg: #e6f7ed;
+  --tia-fault: #c00000;
+  --tia-warn: #e67e00;
+  --tia-rail: #1a1a1a;
+  --tia-wire: #333333;
+  --tia-active: #ffcc00;
+  --tia-active-glow: rgba(255, 200, 0, 0.45);
+  --tia-tree-hover: #dceaf2;
+  --font-ui: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "Consolas", "Cascadia Mono", "IBM Plex Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--tia-text);
+  background: var(--tia-bg);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid var(--tia-border);
+  border-radius: 2px;
+  padding: 3px 6px;
+  background: #fff;
+  color: var(--tia-text);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 1px solid var(--tia-blue-mid);
+  border-color: var(--tia-blue-mid);
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────────── */
+.tia-shell {
+  display: grid;
+  grid-template-rows: 28px 36px 1fr 22px;
+  height: 100%;
+}
+
+.tia-menubar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  background: linear-gradient(180deg, #2a4a62, var(--tia-header));
+  color: #e8f0f5;
+  font-size: 12px;
+  user-select: none;
+}
+
+.tia-menubar .brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-right: 12px;
+  color: #fff;
+}
+
+.tia-menubar .brand span {
+  color: var(--tia-teal);
+  font-weight: 400;
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+.tia-menubar button {
+  background: transparent;
+  border: none;
+  color: #d0dde6;
+  padding: 4px 10px;
+  border-radius: 2px;
+}
+
+.tia-menubar button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.tia-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: linear-gradient(180deg, #f5f7f9, var(--tia-toolbar));
+  border-bottom: 1px solid var(--tia-border);
+}
+
+.tia-toolbar .sep {
+  width: 1px;
+  height: 22px;
+  background: var(--tia-border);
+  margin: 0 4px;
+}
+
+.tia-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--tia-border);
+  background: linear-gradient(180deg, #fff, #e8ecf0);
+  color: var(--tia-text);
+  border-radius: 2px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tia-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #fff, #dce8f0);
+  border-color: var(--tia-blue-mid);
+}
+
+.tia-btn-run {
+  background: linear-gradient(180deg, #3dba6e, #2a9d56);
+  border-color: #1e7a42;
+  color: #fff;
+}
+
+.tia-btn-run:hover:not(:disabled) {
+  background: linear-gradient(180deg, #48c97a, #2a9d56);
+}
+
+.tia-btn-stop {
+  background: linear-gradient(180deg, #e05050, #c03030);
+  border-color: #a02020;
+  color: #fff;
+}
+
+.tia-btn-primary {
+  background: linear-gradient(180deg, #2a8fc4, var(--tia-blue));
+  border-color: var(--tia-blue-dark);
+  color: #fff;
+}
+
+.tia-badge {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  border-radius: 2px;
+  border: 1px solid var(--tia-border);
+  background: #fff;
+}
+
+.tia-badge.run {
+  background: var(--tia-online-bg);
+  border-color: var(--tia-online);
+  color: #006633;
+  font-weight: 700;
+}
+
+.tia-badge.stop {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.tia-badge.fault {
+  background: #fde8e8;
+  border-color: var(--tia-fault);
+  color: var(--tia-fault);
+  font-weight: 700;
+}
+
+.tia-badge.modbus-on {
+  background: #e0f4f4;
+  border-color: var(--tia-teal);
+  color: #006666;
+}
+
+.tia-badge.modbus-off {
+  background: #f0f0f0;
+  color: #888;
+}
+
+/* ── Workspace ───────────────────────────────────────────────────────────── */
+.tia-workspace {
+  display: grid;
+  grid-template-columns: 220px 1fr 280px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tia-tree {
+  background: var(--tia-panel);
+  border-right: 1px solid var(--tia-border);
+  overflow: auto;
+  user-select: none;
+}
+
+.tia-tree-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tia-muted);
+  padding: 8px 10px 4px;
+  border-bottom: 1px solid var(--tia-border-light);
+}
+
+.tia-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 5px 10px 5px 14px;
+  font-size: 12px;
+  color: var(--tia-text);
+  border-left: 3px solid transparent;
+}
+
+.tia-tree-item:hover {
+  background: var(--tia-tree-hover);
+}
+
+.tia-tree-item.active {
+  background: var(--tia-select);
+  border-left-color: var(--tia-select-border);
+  font-weight: 600;
+}
+
+.tia-tree-item .ico {
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.tia-tree-group {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tia-blue-dark);
+  padding: 10px 10px 2px 10px;
+}
+
+.tia-center {
+  background: var(--tia-bg);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tia-center-tabs {
+  display: flex;
+  background: var(--tia-toolbar);
+  border-bottom: 1px solid var(--tia-border);
+  flex-shrink: 0;
+}
+
+.tia-center-tabs .tab {
+  border: none;
+  background: transparent;
+  padding: 7px 14px;
+  font-size: 12px;
+  border-right: 1px solid var(--tia-border-light);
+  color: var(--tia-muted);
+}
+
+.tia-center-tabs .tab.active {
+  background: var(--tia-paper);
+  color: var(--tia-text);
+  font-weight: 600;
+  border-bottom: 2px solid var(--tia-blue-mid);
+  margin-bottom: -1px;
+}
+
+.tia-center-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--tia-paper);
+}
+
+.tia-right {
+  background: var(--tia-panel);
+  border-left: 1px solid var(--tia-border);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.tia-right h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tia-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--tia-border-light);
+  background: #e4e8ec;
+}
+
+/* ── Status bar ──────────────────────────────────────────────────────────── */
+.tia-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 10px;
+  background: var(--tia-header);
+  color: #c8d8e4;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.tia-statusbar strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ── Data tables (tags / modbus) ──────────────────────────────────────────── */
+.tia-table-wrap {
+  padding: 8px;
+}
+
+.tia-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: #fff;
+}
+
+.tia-table th {
+  background: linear-gradient(180deg, #e8eef2, #d8e0e6);
+  border: 1px solid var(--tia-border);
+  padding: 5px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--tia-blue-dark);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tia-table td {
+  border: 1px solid var(--tia-border-light);
+  padding: 3px 6px;
+  vertical-align: middle;
+}
+
+.tia-table tr:nth-child(even) td {
+  background: #f7f9fa;
+}
+
+.tia-table tr:hover td {
+  background: var(--tia-select);
+}
+
+.tia-table input,
+.tia-table select {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 2px 4px;
+}
+
+.tia-table input:focus,
+.tia-table select:focus {
+  border-color: var(--tia-blue-mid);
+  background: #fff;
+}
+
+.tia-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--tia-border-light);
+  background: linear-gradient(180deg, #f8fafb, #eef2f5);
+}
+
+.tia-page-header h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--tia-blue-dark);
+}
+
+.tia-page-header p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--tia-muted);
+}
+
+.tia-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── Watch / IO bits ─────────────────────────────────────────────────────── */
+.watch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 8px;
+}
+
+.watch-bit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 2px;
+  border: 1px solid var(--tia-border);
+  border-radius: 2px;
+  background: #fff;
+  font-size: 11px;
+}
+
+.watch-bit.on {
+  background: var(--tia-online-bg);
+  border-color: var(--tia-online);
+  box-shadow: inset 0 0 0 1px rgba(0, 166, 81, 0.25);
+}
+
+.watch-bit .tag {
+  font-family: var(--font-mono);
+  color: var(--tia-muted);
+}
+
+.watch-bit .val {
+  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.watch-reg {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--tia-border-light);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  width: 100%;
+  background: #fff;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  text-align: left;
+}
+
+.watch-reg:hover {
+  background: var(--tia-select);
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tia-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 10px 4px;
+}
+
+/* Ladder UI: scoped styles in features/ladder/components/* */
+.lad-paper {
+  background: #fff;
+  min-height: 100%;
+}
+
+.msg-bar {
+  font-size: 11px;
+  color: var(--tia-muted);
+  margin-left: auto;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
