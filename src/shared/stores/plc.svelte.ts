@@ -4,6 +4,15 @@
 import { api, listenFault, listenMemory, listenScanTick } from "../lib/api";
 import { createDemoProgram, uid } from "../lib/demoProgram";
 import { createElement } from "../../features/ladder/elements";
+import {
+  addParallelBranch,
+  addToParallelBranch,
+  insertBeforeCoils,
+  makeParallelGroup,
+  removeNodeById,
+  removeParallelBranch as removeParallelBranchOp,
+  updateNodeById,
+} from "../../features/ladder/lib/ladderEdit";
 import { SvelteSet } from "svelte/reactivity";
 import type {
   AppView,
@@ -55,6 +64,10 @@ class PlcStore {
   activeElements = new SvelteSet<string>();
   activeRungs = new SvelteSet<string>();
   selectedRungId = $state<string | null>(null);
+  /** Insert target: which OR branch of the selected rung (null = main series). */
+  selectedBranch = $state<number | null>(null);
+  /** Insert target inside an inline parallel group (group id + branch index). */
+  selectedParallel = $state<{ groupId: string; branch: number } | null>(null);
   message = $state<string>("");
   busy = $state(false);
   cycleMs = $state(20);
@@ -374,7 +387,11 @@ class PlcStore {
       ...this.program,
       rungs: this.program.rungs.filter((r) => r.id !== id),
     };
-    if (this.selectedRungId === id) this.selectedRungId = null;
+    if (this.selectedRungId === id) {
+      this.selectedRungId = null;
+      this.selectedBranch = null;
+      this.selectedParallel = null;
+    }
   }
 
   addElement(rungId: string, kind: PaletteKind) {
@@ -388,7 +405,7 @@ class PlcStore {
       rungs: this.program.rungs.map((r) => {
         if (r.id !== rungId) return r;
         const rr = ensureOr(r);
-        return { ...rr, elements: insertBeforeCoil(rr.elements, el) };
+        return { ...rr, elements: insertBeforeCoils(rr.elements, el) };
       }),
     };
   }
@@ -428,10 +445,14 @@ class PlcStore {
         };
       }),
     };
+    if (this.selectedRungId === rungId && this.selectedBranch === branchIdx) {
+      this.selectedBranch = null;
+    }
   }
 
   addToOrBranch(rungId: string, branchIdx: number, kind: PaletteKind) {
-    if (kind === "or_branch") return;
+    // Coils and OR-branch tokens never belong inside a parallel contact branch.
+    if (kind === "or_branch" || isCoilKind(kind)) return;
     const el = createElement(kind);
     this.program = {
       ...this.program,
@@ -485,7 +506,7 @@ class PlcStore {
       ...this.program,
       rungs: this.program.rungs.map((r) =>
         r.id === rungId
-          ? { ...ensureOr(r), elements: r.elements.filter((e) => e.id !== elementId) }
+          ? { ...ensureOr(r), elements: removeNodeById(r.elements, elementId) }
           : r
       ),
     };
@@ -496,10 +517,7 @@ class PlcStore {
       ...this.program,
       rungs: this.program.rungs.map((r) =>
         r.id === rungId
-          ? {
-              ...ensureOr(r),
-              elements: r.elements.map((e) => (e.id === element.id ? element : e)),
-            }
+          ? { ...ensureOr(r), elements: updateNodeById(r.elements, element) }
           : r
       ),
     };
@@ -524,7 +542,7 @@ class PlcStore {
     this.editingOrBranch = null;
   }
 
-  applyElementEdit(element: LadderElement) {
+  applyElementEdit(element: LadderElement, label = "") {
     const rungId = this.editingRungId;
     if (!rungId) return;
     if (this.editingOrBranch != null) {
@@ -532,8 +550,22 @@ class PlcStore {
     } else {
       this.updateElement(rungId, element);
     }
+    this.setElementLabel(element.id, label);
     this.closeElementEditor();
     void this.pushProgram();
+  }
+
+  /** Symbolic 10-char label shown next to an element (stored in program metadata). */
+  labelFor(id: string): string {
+    return this.program.metadata?.[`lbl:${id}`] ?? "";
+  }
+
+  setElementLabel(id: string, label: string) {
+    const trimmed = label.trim().slice(0, 10);
+    const metadata = { ...(this.program.metadata ?? {}) };
+    if (trimmed) metadata[`lbl:${id}`] = trimmed;
+    else delete metadata[`lbl:${id}`];
+    this.program = { ...this.program, metadata };
   }
 
   updateRungComment(rungId: string, comment: string) {
@@ -543,6 +575,182 @@ class PlcStore {
         r.id === rungId ? { ...ensureOr(r), comment } : r
       ),
     };
+  }
+
+  // ── Insertion target + toolbar-driven editing ──────────────────────────────
+
+  /** Select a network as the insertion target (main series). */
+  selectRung(rungId: string) {
+    this.selectedRungId = rungId;
+    this.selectedBranch = null;
+    this.selectedParallel = null;
+  }
+
+  /** Select a specific parallel OR branch of a network as the insertion target. */
+  selectBranch(rungId: string, branchIdx: number) {
+    this.selectedRungId = rungId;
+    this.selectedBranch = branchIdx;
+    this.selectedParallel = null;
+  }
+
+  /** Select a branch of an inline parallel group as the insertion target. */
+  selectParallelBranch(rungId: string, groupId: string, branch: number) {
+    this.selectedRungId = rungId;
+    this.selectedBranch = null;
+    this.selectedParallel = { groupId, branch };
+  }
+
+  /** Currently selected network index, or -1. */
+  get selectedRungIndex(): number {
+    return this.program.rungs.findIndex((r) => r.id === this.selectedRungId);
+  }
+
+  /** Human-readable description of where the toolbar will insert. */
+  get insertTargetLabel(): string {
+    const i = this.selectedRungIndex;
+    if (i < 0) return "new network";
+    if (this.selectedParallel) return `Network ${i} · ∥${this.selectedParallel.branch}`;
+    return this.selectedBranch != null
+      ? `Network ${i} · OR${this.selectedBranch}`
+      : `Network ${i}`;
+  }
+
+  /** Return the target rung id, creating + selecting a network when none exists. */
+  private ensureTargetRung(): string {
+    let id =
+      this.selectedRungId ??
+      this.program.rungs[this.program.rungs.length - 1]?.id ??
+      null;
+    if (!id) {
+      this.addRung();
+      id = this.program.rungs[this.program.rungs.length - 1]?.id ?? null;
+    }
+    if (id) this.selectedRungId = id;
+    return id ?? "";
+  }
+
+  /** Insert an instruction (or a parallel branch) at the current target. */
+  insertInstruction(kind: PaletteKind) {
+    if (this.view !== "ladder") this.setView("ladder");
+    const rungId = this.ensureTargetRung();
+    if (!rungId) return;
+
+    if (kind === "or_branch") {
+      this.addOrBranch(rungId);
+      const r = this.program.rungs.find((x) => x.id === rungId);
+      this.selectedBranch = r ? r.or_branches.length - 1 : null;
+      this.selectedParallel = null;
+      this.message = "Added parallel OR branch — pick the next contact";
+      return;
+    }
+
+    if (isCoilKind(kind)) {
+      // Coils are outputs — always to the series output rail.
+      this.addElement(rungId, kind);
+      this.message = "Coil added on the output rail";
+      return;
+    }
+
+    if (this.selectedParallel) {
+      const { groupId, branch } = this.selectedParallel;
+      const el = createElement(kind);
+      this.program = {
+        ...this.program,
+        rungs: this.program.rungs.map((r) =>
+          r.id === rungId
+            ? { ...ensureOr(r), elements: addToParallelBranch(r.elements, groupId, branch, el) }
+            : r
+        ),
+      };
+      this.message = `Inserted ${kind} into parallel branch ∥${branch}`;
+      return;
+    }
+
+    if (this.selectedBranch != null) {
+      this.addToOrBranch(rungId, this.selectedBranch, kind);
+      this.message = `Inserted ${kind} into OR${this.selectedBranch}`;
+    } else {
+      this.addElement(rungId, kind);
+      this.message = `Inserted ${kind}`;
+    }
+  }
+
+  /** Insert an inline parallel block (two seed branches) into the series. */
+  addParallelBlock() {
+    if (this.view !== "ladder") this.setView("ladder");
+    const rungId = this.ensureTargetRung();
+    if (!rungId) return;
+    const group = makeParallelGroup(uid("par"), [
+      [createElement("contact_no") as LadderElement],
+      [createElement("contact_no") as LadderElement],
+    ]);
+    this.program = {
+      ...this.program,
+      rungs: this.program.rungs.map((r) =>
+        r.id === rungId ? { ...ensureOr(r), elements: insertBeforeCoils(r.elements, group) } : r
+      ),
+    };
+    this.selectedBranch = null;
+    this.selectedParallel = { groupId: group.id, branch: 0 };
+    this.message = "Inserted parallel block — select a branch and add contacts";
+  }
+
+  /** Add a new branch to an inline parallel group. */
+  addBranchToParallel(rungId: string, groupId: string) {
+    this.program = {
+      ...this.program,
+      rungs: this.program.rungs.map((r) =>
+        r.id === rungId
+          ? {
+              ...ensureOr(r),
+              elements: addParallelBranch(
+                r.elements,
+                groupId,
+                createElement("contact_no") as LadderElement
+              ),
+            }
+          : r
+      ),
+    };
+    const r = this.program.rungs.find((x) => x.id === rungId);
+    const grp = r?.elements.find((n) => n.type === "parallel" && n.id === groupId);
+    this.selectedParallel = {
+      groupId,
+      branch: grp && grp.type === "parallel" ? grp.branches.length - 1 : 0,
+    };
+  }
+
+  /** Remove one branch of an inline parallel group (drops the group if emptied). */
+  removeParallelBranch(rungId: string, groupId: string, branch: number) {
+    this.program = {
+      ...this.program,
+      rungs: this.program.rungs.map((r) =>
+        r.id === rungId
+          ? { ...ensureOr(r), elements: removeParallelBranchOp(r.elements, groupId, branch) }
+          : r
+      ),
+    };
+    if (this.selectedParallel?.groupId === groupId) this.selectedParallel = null;
+  }
+
+  /** Remove an entire inline parallel group. */
+  removeParallelGroup(rungId: string, groupId: string) {
+    this.program = {
+      ...this.program,
+      rungs: this.program.rungs.map((r) =>
+        r.id === rungId ? { ...ensureOr(r), elements: removeNodeById(r.elements, groupId) } : r
+      ),
+    };
+    if (this.selectedParallel?.groupId === groupId) this.selectedParallel = null;
+  }
+
+  /** Delete the selected network (if any). */
+  deleteSelectedNetwork() {
+    const id = this.selectedRungId;
+    if (!id) return;
+    this.removeRung(id);
+    this.selectedBranch = null;
+    this.selectedParallel = null;
   }
 
   isActive(id: string) {
@@ -567,15 +775,10 @@ function normalizeProgram(p: LadderProgram): LadderProgram {
   };
 }
 
-function insertBeforeCoil(elements: LadderElement[], el: LadderElement): LadderElement[] {
-  const coilIdx = elements.findIndex(
-    (e) => e.type === "coil" || e.type === "coil_negated"
-  );
-  if (coilIdx === -1) return [...elements, el];
-  if (el.type === "coil" || el.type === "coil_negated") return [...elements, el];
-  const next = [...elements];
-  next.splice(coilIdx, 0, el);
-  return next;
+const COIL_TYPES = new Set(["coil", "coil_negated", "coil_set", "coil_reset"]);
+
+function isCoilKind(kind: string): boolean {
+  return COIL_TYPES.has(kind);
 }
 
 function downloadText(filename: string, content: string) {

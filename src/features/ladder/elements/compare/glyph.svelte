@@ -20,7 +20,10 @@
 </script>
 
 <FunctionBlockBox
-  title="CMP"
-  lines={[CMP_LABEL[element.op] ?? element.op, formatAddress(element.a), formatAddress(element.b)]}
+  title={CMP_LABEL[element.op] ?? element.op}
+  rows={[
+    { k: "IN1", v: formatAddress(element.a) },
+    { k: "IN2", v: formatAddress(element.b) },
+  ]}
   hot={active}
 />

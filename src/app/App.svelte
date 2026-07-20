@@ -18,6 +18,8 @@
   import AuditPanel from "../features/audit/AuditPanel.svelte";
 
   let fileInput: HTMLInputElement | undefined = $state();
+  let treeOpen = $state(true);
+  let instrOpen = $state(true);
 
   onMount(() => {
     plc.init();
@@ -28,13 +30,7 @@
   const running = $derived(runState === "run" || plc.status?.running === true);
 
   function onPaletteAdd(kind: PaletteKind) {
-    if (plc.view !== "ladder") plc.setView("ladder");
-    let target = plc.selectedRungId ?? plc.program.rungs[0]?.id;
-    if (!target) {
-      plc.addRung();
-      target = plc.program.rungs[plc.program.rungs.length - 1]?.id;
-    }
-    if (target) plc.addElement(target, kind);
+    plc.insertInstruction(kind);
   }
 
   async function onFile(e: Event) {
@@ -112,24 +108,41 @@
     {/if}
   </div>
 
-  <div class="tia-workspace">
+  <div class="tia-workspace" style="grid-template-columns: {treeOpen ? '220px' : '32px'} 1fr 280px">
     <aside class="tia-tree">
-      <div class="tia-tree-title">Project tree</div>
-      <div class="tia-tree-group">PLC_1</div>
-      {#each nav as item, i}
-        {#if item.group && (i === 0 || nav[i - 1].group !== item.group)}
-          <div class="tia-tree-group">{item.group}</div>
-        {/if}
+      {#if treeOpen}
+        <div class="tia-tree-title panel-head">
+          <span>Project tree</span>
+          <button
+            type="button"
+            class="collapse-btn"
+            title="Hide project tree"
+            onclick={() => (treeOpen = false)}>◀</button
+          >
+        </div>
+        <div class="tia-tree-group">PLC_1</div>
+        {#each nav as item, i}
+          {#if item.group && (i === 0 || nav[i - 1].group !== item.group)}
+            <div class="tia-tree-group">{item.group}</div>
+          {/if}
+          <button
+            type="button"
+            class="tia-tree-item"
+            class:active={plc.view === item.id}
+            onclick={() => plc.setView(item.id)}
+          >
+            <span class="ico">{item.ico}</span>
+            {item.label}
+          </button>
+        {/each}
+      {:else}
         <button
           type="button"
-          class="tia-tree-item"
-          class:active={plc.view === item.id}
-          onclick={() => plc.setView(item.id)}
+          class="expand-strip"
+          title="Show project tree"
+          onclick={() => (treeOpen = true)}>▶ Project tree</button
         >
-          <span class="ico">{item.ico}</span>
-          {item.label}
-        </button>
-      {/each}
+      {/if}
     </aside>
 
     <main class="tia-center">
@@ -148,12 +161,33 @@
       </div>
       <div class="tia-center-body">
         {#if plc.view === "ladder"}
-          <div style="display:grid;grid-template-columns:160px 1fr;height:100%">
+          <div
+            style="display:grid;grid-template-columns:{instrOpen
+              ? '160px'
+              : '32px'} 1fr;height:100%"
+          >
             <div
               style="border-right:1px solid var(--tia-border);overflow:auto;background:var(--tia-panel)"
             >
-              <div class="section-label">Instructions</div>
-              <ElementPalette onAdd={onPaletteAdd} />
+              {#if instrOpen}
+                <div class="section-label panel-head">
+                  <span>Instructions</span>
+                  <button
+                    type="button"
+                    class="collapse-btn"
+                    title="Hide instructions"
+                    onclick={() => (instrOpen = false)}>◀</button
+                  >
+                </div>
+                <ElementPalette onAdd={onPaletteAdd} />
+              {:else}
+                <button
+                  type="button"
+                  class="expand-strip"
+                  title="Show instructions"
+                  onclick={() => (instrOpen = true)}>▶ Instructions</button
+                >
+              {/if}
             </div>
             <LadderEditor />
           </div>
@@ -202,7 +236,8 @@
   <ElementPropertiesDialog
     element={plc.editingElement}
     open={plc.dialogOpen}
+    label={plc.labelFor(plc.editingElement.id)}
     onClose={() => plc.closeElementEditor()}
-    onApply={(el) => plc.applyElementEdit(el)}
+    onApply={(el, label) => plc.applyElementEdit(el, label)}
   />
 {/if}

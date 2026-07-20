@@ -164,6 +164,13 @@ pub enum LadderElement {
     Wire {
         id: String,
     },
+    /// Parallel OR group placed inline within a rung's series (nestable).
+    /// power = incoming AND (branch0 OR branch1 OR …).
+    #[serde(rename = "parallel")]
+    ParallelGroup {
+        id: String,
+        branches: Vec<Vec<LadderElement>>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -600,6 +607,23 @@ fn compile_elements(
                 debug_map.insert(id.clone(), idx);
                 instructions.push(Instruction::Nop);
             }
+            LadderElement::ParallelGroup { id, branches } => {
+                debug_map.insert(id.clone(), idx);
+                instructions.push(Instruction::OrBegin);
+                for (bi, branch) in branches.iter().enumerate() {
+                    if bi > 0 {
+                        instructions.push(Instruction::OrAlt);
+                    }
+                    if branch.is_empty() {
+                        return Err(CompileError::InvalidElement(
+                            id.clone(),
+                            format!("empty parallel branch {bi}"),
+                        ));
+                    }
+                    compile_elements(branch, instructions, debug_map)?;
+                }
+                instructions.push(Instruction::OrEnd);
+            }
         }
     }
     Ok(())
@@ -1011,5 +1035,62 @@ mod tests {
             let parsed = serde_json::from_str::<LadderProgram>(bad);
             assert!(parsed.is_err(), "malformed input must not parse: {bad:?}");
         }
+    }
+
+    #[test]
+    fn parallel_group_compiles_to_or_block() {
+        let prog = single_rung(vec![
+            LadderElement::ContactNo {
+                id: "a".into(),
+                address: Address::discrete(0),
+            },
+            LadderElement::ParallelGroup {
+                id: "pg".into(),
+                branches: vec![
+                    vec![LadderElement::ContactNo {
+                        id: "b".into(),
+                        address: Address::discrete(1),
+                    }],
+                    vec![LadderElement::ContactNo {
+                        id: "c".into(),
+                        address: Address::discrete(2),
+                    }],
+                ],
+            },
+            LadderElement::Coil {
+                id: "q".into(),
+                address: Address::coil(0),
+            },
+        ]);
+        let c = compile(prog).unwrap();
+        assert!(c
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::OrBegin)));
+        assert!(c
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::OrAlt)));
+        assert!(c
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::OrEnd)));
+        // debug map records the group id for editor highlighting.
+        assert!(c.debug_map.contains_key("pg"));
+    }
+
+    #[test]
+    fn empty_parallel_branch_errors() {
+        let prog = single_rung(vec![
+            LadderElement::ParallelGroup {
+                id: "pg".into(),
+                branches: vec![vec![]],
+            },
+            LadderElement::Coil {
+                id: "q".into(),
+                address: Address::coil(0),
+            },
+        ]);
+        assert!(compile(prog).is_err());
     }
 }

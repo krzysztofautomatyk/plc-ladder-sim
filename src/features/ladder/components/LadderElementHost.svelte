@@ -18,6 +18,8 @@
     powerIn?: boolean;
     energized?: boolean;
     compact?: boolean;
+    /** Optional symbolic name shown above the element (e.g. BTN_START). */
+    label?: string;
     onRemove: () => void;
     onChange: (el: LadderElement) => void;
     onEdit?: () => void;
@@ -29,6 +31,7 @@
     powerIn = false,
     energized = false,
     compact = false,
+    label = "",
     onRemove,
     onEdit,
   }: Props = $props();
@@ -96,7 +99,11 @@
     title="Delete">×</button
   >
 
-  {#if topLabel && element.type !== "wire"}
+  {#if label}
+    <div class="label sym" title={label}>{label}</div>
+  {/if}
+
+  {#if topLabel && !isFb && element.type !== "wire"}
     <div class="label top" class:hot={lit}>{topLabel}</div>
   {/if}
 
@@ -112,7 +119,7 @@
     />
   </div>
 
-  {#if bottomLabel}
+  {#if bottomLabel && !isFb}
     <div class="label bot" class:hot={lit}>{bottomLabel}</div>
   {/if}
 </div>
@@ -138,7 +145,8 @@
     outline: 2px solid #0078a8;
   }
   .cell.fb {
-    width: 100px;
+    width: 116px;
+    height: 108px;
   }
   .cell.coil {
     width: 64px;
@@ -201,6 +209,17 @@
     font-size: 9.5px;
     font-weight: 500;
     color: #5a6570;
+  }
+  .label.sym {
+    bottom: calc(50% + 30px);
+    font-size: 10px;
+    font-weight: 700;
+    color: #7a3ea0;
+    letter-spacing: 0.01em;
+    max-width: 112px;
+  }
+  .cell.fb .label.sym {
+    bottom: calc(50% + 46px);
   }
   .label.hot {
     color: #007a3d;

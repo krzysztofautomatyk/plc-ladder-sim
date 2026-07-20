@@ -12,6 +12,10 @@
 
 <FunctionBlockBox
   title={element.op.toUpperCase()}
-  lines={[`IN1 ${formatAddress(element.a)}`, `IN2 ${formatAddress(element.b)}`, `OUT ${formatAddress(element.dest)}`]}
+  rows={[
+    { k: "IN1", v: formatAddress(element.a) },
+    { k: "IN2", v: formatAddress(element.b) },
+    { k: "OUT", v: formatAddress(element.dest) },
+  ]}
   hot={active}
 />

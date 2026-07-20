@@ -12,6 +12,9 @@
 
 <FunctionBlockBox
   title="MOVE"
-  lines={[`IN ${formatAddress(element.source)}`, `OUT ${formatAddress(element.dest)}`]}
+  rows={[
+    { k: "IN", v: formatAddress(element.source) },
+    { k: "OUT", v: formatAddress(element.dest) },
+  ]}
   hot={active}
 />

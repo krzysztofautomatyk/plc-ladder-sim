@@ -2,12 +2,32 @@
   import { plc } from "../../../shared/stores/plc.svelte";
   import type { Address, LadderElement } from "../../../shared/lib/types";
   import { readMemoryBit } from "../lib/memoryRead";
+  import { kindForKey } from "../lib/shortcuts";
   import RungView from "./LadderNetwork.svelte";
+  import LadderInsertToolbar from "./LadderInsertToolbar.svelte";
 
   function isEnergized(addr: Address): boolean {
     return readMemoryBit(plc.memory, addr);
   }
+
+  function onKey(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (plc.view !== "ladder") return;
+    const t = e.target as HTMLElement | null;
+    if (t) {
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable)
+        return;
+    }
+    const kind = kindForKey(e.key);
+    if (kind) {
+      e.preventDefault();
+      plc.insertInstruction(kind);
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onKey} />
 
 <div class="editor-root">
   <div class="editor-toolbar">
@@ -25,12 +45,20 @@
     <span class="hint">IEC 61131-3 · left rail → right rail · online monitor</span>
   </div>
 
+  <LadderInsertToolbar
+    onInsert={(k) => plc.insertInstruction(k)}
+    onInsertParallel={() => plc.addParallelBlock()}
+    onAddNetwork={() => plc.addRung()}
+    onDeleteNetwork={() => plc.deleteSelectedNetwork()}
+    targetLabel={plc.insertTargetLabel}
+  />
+
   <div class="editor-canvas">
     {#if plc.program.rungs.length === 0}
       <div class="empty">
         <div class="empty-card">
           <h3>Empty organization block</h3>
-          <p>Add a network and insert contacts, coils, and function blocks from the instruction list.</p>
+          <p>Add a network and insert contacts, coils, and function blocks from the toolbar above (or press keys 1–8, o).</p>
           <button type="button" class="tia-btn tia-btn-primary" onclick={() => plc.addRung()}
             >Insert network</button
           >
@@ -42,11 +70,19 @@
           {rung}
           networkNo={i}
           selected={plc.selectedRungId === rung.id}
+          selectedBranch={plc.selectedRungId === rung.id ? plc.selectedBranch : null}
+          selectedParallel={plc.selectedRungId === rung.id ? plc.selectedParallel : null}
           active={plc.isRungActive(rung.id)}
           isElementActive={(id) => plc.isActive(id)}
           isEnergized={isEnergized}
+          labelFor={(id) => plc.labelFor(id)}
           online={plc.status?.run_state === "run" || plc.status?.running === true}
-          onSelect={() => (plc.selectedRungId = rung.id)}
+          onSelect={() => plc.selectRung(rung.id)}
+          onSelectBranch={(bi) => plc.selectBranch(rung.id, bi)}
+          onSelectParallelBranch={(gid, bi) => plc.selectParallelBranch(rung.id, gid, bi)}
+          onAddParallelBranch={(gid) => plc.addBranchToParallel(rung.id, gid)}
+          onRemoveParallelBranch={(gid, bi) => plc.removeParallelBranch(rung.id, gid, bi)}
+          onRemoveParallelGroup={(gid) => plc.removeParallelGroup(rung.id, gid)}
           onRemove={() => plc.removeRung(rung.id)}
           onComment={(c) => plc.updateRungComment(rung.id, c)}
           onAddKind={(k) => plc.addElement(rung.id, k)}

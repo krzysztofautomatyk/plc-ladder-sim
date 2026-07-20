@@ -172,8 +172,21 @@ textarea:focus {
   color: #fff;
 }
 
+.tia-btn-stop:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ec6060, #c83636);
+  border-color: #a02020;
+  color: #fff;
+}
+
 .tia-btn-primary {
   background: linear-gradient(180deg, #2a8fc4, var(--tia-blue));
+  border-color: var(--tia-blue-dark);
+  color: #fff;
+}
+
+/* Keep colored buttons readable on hover (white text needs a dark ground). */
+.tia-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #34a0d6, #006a94);
   border-color: var(--tia-blue-dark);
   color: #fff;
 }
@@ -516,4 +529,48 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Collapsible side panels ─────────────────────────────────────────────── */
+.collapse-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--tia-muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 2px;
+}
+.collapse-btn:hover {
+  background: var(--tia-tree-hover);
+  border-color: var(--tia-border-light);
+  color: var(--tia-blue-dark);
+}
+
+.expand-strip {
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  border: none;
+  background: linear-gradient(180deg, #eef2f5, #e2e8ec);
+  color: var(--tia-blue-dark);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10px;
+  writing-mode: vertical-rl;
+  letter-spacing: 0.08em;
+}
+.expand-strip:hover {
+  background: var(--tia-tree-hover);
+  color: var(--tia-blue);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
 }

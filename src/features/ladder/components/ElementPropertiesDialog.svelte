@@ -3,6 +3,7 @@
    * Dialog: assign I / Q / M / R / R1.x variables to ladder element.
    */
   import type { Address, CmpOp, LadderElement, MathOp } from "../../../shared/lib/types";
+  import type { ElementType } from "../elements/_shared/types";
   import {
     ADDRESS_HELP_MD,
     formToAddress,
@@ -19,21 +20,25 @@
   interface Props {
     element: LadderElement;
     open: boolean;
+    label?: string;
     onClose: () => void;
-    onApply: (el: LadderElement) => void;
+    onApply: (el: LadderElement, label: string) => void;
   }
 
-  let { element, open, onClose, onApply }: Props = $props();
+  let { element, open, label = "", onClose, onApply }: Props = $props();
 
   let showHelp = $state(false);
   let quick = $state("");
   let parseError = $state("");
+  let labelInput = $state("");
 
   // Primary address form (contacts/coils)
   let prefix = $state<VarPrefix>("I");
   let index = $state(0);
   let bit = $state(0);
   let useBit = $state(false);
+  /** Switchable sub-type for bit elements (NO/NC/edge · coil//coil/SET/RESET). */
+  let selectedType = $state<ElementType>("contact_no");
 
   // FB fields
   let presetMs = $state(1000);
@@ -57,12 +62,22 @@
   const isMove = $derived(element.type === "move");
   const isCmp = $derived(element.type === "compare");
   const isWire = $derived(element.type === "wire");
+  const isContactFamily = $derived(
+    (["contact_no", "contact_nc", "contact_rising", "contact_falling"] as string[]).includes(
+      element.type
+    )
+  );
+  const isCoilFamily = $derived(
+    (["coil", "coil_negated", "coil_set", "coil_reset"] as string[]).includes(element.type)
+  );
 
   $effect(() => {
     if (!open) return;
     showHelp = false;
     parseError = "";
     quick = "";
+    labelInput = label;
+    selectedType = element.type;
     syncFromElement(element);
   });
 
@@ -155,7 +170,11 @@
     let next: LadderElement = { ...element } as LadderElement;
 
     if (isBit && "address" in next) {
-      next = { ...next, address: primaryAddress() } as LadderElement;
+      next = {
+        type: selectedType,
+        id: element.id,
+        address: primaryAddress(),
+      } as LadderElement;
     } else if (isTimer && (next.type === "ton" || next.type === "tof" || next.type === "rto")) {
       const done = mustParse(addrDone, "done");
       if (!done) return;
@@ -212,7 +231,7 @@
       // nothing
     }
 
-    onApply(next);
+    onApply(next, labelInput.trim().slice(0, 10));
     onClose();
   }
 
@@ -272,7 +291,47 @@
         </div>
       {:else}
         <div class="dlg-b">
+          <section class="sec">
+            <h3>Symbol / label (max 10 chars)</h3>
+            <div class="row">
+              <input
+                class="grow"
+                maxlength="10"
+                placeholder="e.g. BTN_START, M1_on, Motor_Run"
+                bind:value={labelInput}
+              />
+              <span class="muted">shown above the element</span>
+            </div>
+          </section>
+
           {#if isBit}
+            <section class="sec">
+              <h3>Element type</h3>
+              <div class="row">
+                <label class="grow">
+                  Type
+                  <select bind:value={selectedType}>
+                    {#if isContactFamily}
+                      <optgroup label="Contacts">
+                        <option value="contact_no">—│ │—  NO contact</option>
+                        <option value="contact_nc">—│/│—  NC contact</option>
+                        <option value="contact_rising">—│P│—  Rising edge ↑</option>
+                        <option value="contact_falling">—│N│—  Falling edge ↓</option>
+                      </optgroup>
+                    {/if}
+                    {#if isCoilFamily}
+                      <optgroup label="Coils / outputs">
+                        <option value="coil">—( )—  Coil</option>
+                        <option value="coil_negated">—(/)—  Negated coil</option>
+                        <option value="coil_set">—(S)—  SET (latch)</option>
+                        <option value="coil_reset">—(R)—  RESET (unlatch)</option>
+                      </optgroup>
+                    {/if}
+                  </select>
+                </label>
+              </div>
+            </section>
+
             <section class="sec">
               <h3>Variable address (I / Q / M / R)</h3>
               <div class="row">

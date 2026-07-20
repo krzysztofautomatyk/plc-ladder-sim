@@ -4,6 +4,7 @@ import {
   splitRungElements,
   seriesPowerIn,
   seriesPowerOut,
+  rungColumns,
 } from "./ladderLayout";
 import type { LadderElement } from "../../../shared/lib/types";
 
@@ -50,24 +51,55 @@ describe("splitRungElements", () => {
 describe("series power flow", () => {
   const chain = [contact("a"), contact("b"), contact("c")];
   const activeIds = new Set(["a", "b"]);
-  const isActive = (id: string) => activeIds.has(id);
+  const conducts = (n: { id: string }) => activeIds.has(n.id);
 
   it("feeds the left rail into index 0", () => {
-    expect(seriesPowerIn(chain, 0, isActive)).toBe(true);
+    expect(seriesPowerIn(chain, 0, conducts)).toBe(true);
   });
 
   it("propagates power from the previous conducting element", () => {
-    expect(seriesPowerIn(chain, 1, isActive)).toBe(true); // a active
-    expect(seriesPowerIn(chain, 2, isActive)).toBe(true); // b active
+    expect(seriesPowerIn(chain, 1, conducts)).toBe(true); // a active
+    expect(seriesPowerIn(chain, 2, conducts)).toBe(true); // b active
   });
 
   it("stops power after a non-conducting element", () => {
-    const isActiveOnlyA = (id: string) => id === "a";
-    expect(seriesPowerIn(chain, 2, isActiveOnlyA)).toBe(false); // b inactive
+    const onlyA = (n: { id: string }) => n.id === "a";
+    expect(seriesPowerIn(chain, 2, onlyA)).toBe(false); // b inactive
   });
 
   it("reports the outgoing wire state per element", () => {
-    expect(seriesPowerOut(chain, 0, isActive)).toBe(true); // a active
-    expect(seriesPowerOut(chain, 2, isActive)).toBe(false); // c inactive
+    expect(seriesPowerOut(chain, 0, conducts)).toBe(true); // a active
+    expect(seriesPowerOut(chain, 2, conducts)).toBe(false); // c inactive
+  });
+});
+
+describe("rungColumns", () => {
+  it("splits a plain series rung into series + coils with no parallel block", () => {
+    const cols = rungColumns({
+      elements: [contact("x4"), coil("m1")],
+      or_branches: [],
+    });
+    expect(cols.hasParallel).toBe(false);
+    expect(cols.branches).toEqual([]);
+    expect(cols.series.map((e) => e.id)).toEqual(["x4"]);
+    expect(cols.coils.map((e) => e.id)).toEqual(["m1"]);
+  });
+
+  it("models (X1 OR X2 OR X3) AND X4 -> M1 like the reference ladder", () => {
+    const cols = rungColumns({
+      elements: [contact("x4"), coil("m1")],
+      or_branches: [[contact("x1")], [contact("x2")], [contact("x3")]],
+    });
+    expect(cols.hasParallel).toBe(true);
+    expect(cols.branches).toHaveLength(3);
+    expect(cols.branches.map((b) => b[0].id)).toEqual(["x1", "x2", "x3"]);
+    expect(cols.series.map((e) => e.id)).toEqual(["x4"]);
+    expect(cols.coils.map((e) => e.id)).toEqual(["m1"]);
+  });
+
+  it("tolerates a missing or_branches field", () => {
+    const cols = rungColumns({ elements: [coil("q")] });
+    expect(cols.hasParallel).toBe(false);
+    expect(cols.coils.map((e) => e.id)).toEqual(["q"]);
   });
 });

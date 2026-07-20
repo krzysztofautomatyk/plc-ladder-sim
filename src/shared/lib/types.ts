@@ -72,10 +72,20 @@ export type LadderElement =
   | { type: "compare"; id: string; op: CmpOp; a: Address; b: Address }
   | { type: "wire"; id: string };
 
+/** A parallel OR group placed inline within a rung's series (branches of contacts). */
+export interface ParallelNode {
+  type: "parallel";
+  id: string;
+  branches: LadderElement[][];
+}
+
+/** A node in a rung's series: a normal element or an inline parallel group. */
+export type RungNode = LadderElement | ParallelNode;
+
 export interface Rung {
   id: string;
   comment: string;
-  elements: LadderElement[];
+  elements: RungNode[];
   or_branches: LadderElement[][];
   enabled: boolean;
 }

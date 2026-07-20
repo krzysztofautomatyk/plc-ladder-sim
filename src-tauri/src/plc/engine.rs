@@ -263,6 +263,9 @@ impl PlcEngine {
 
         let mut power = true; // each rung starts with left power rail TRUE
         let mut or_accum = false;
+        // Stack of (incoming_power, outer_or_accum) so a parallel group placed
+        // mid-rung is AND-ed with the series power that reached it (and nesting works).
+        let mut or_stack: Vec<(bool, bool)> = Vec::new();
         let mut active_elements: HashSet<String> = HashSet::new();
         let mut active_rungs: HashSet<String> = HashSet::new();
         let input_image = ScanInputImage::capture(&self.memory);
@@ -282,6 +285,7 @@ impl PlcEngine {
                     }
                 }
                 Instruction::OrBegin => {
+                    or_stack.push((power, or_accum));
                     or_accum = false;
                     power = true;
                 }
@@ -291,7 +295,9 @@ impl PlcEngine {
                 }
                 Instruction::OrEnd => {
                     or_accum |= power;
-                    power = or_accum;
+                    let (incoming, outer_accum) = or_stack.pop().unwrap_or((true, false));
+                    power = incoming && or_accum;
+                    or_accum = outer_accum;
                 }
                 Instruction::LoadNo { area, index, bit } => {
                     let v = self.read_bit(*area, *index, *bit, &input_image)?;
@@ -604,6 +610,7 @@ impl PlcEngine {
                     }
                     power = true;
                     or_accum = false;
+                    or_stack.clear();
                 }
             }
         }
@@ -1408,6 +1415,57 @@ mod tests {
         mem.set_discrete(0, true).unwrap();
         run_n(&eng, 1, 20); // power true ⇒ negated coil FALSE
         assert!(!mem.get_coil(0).unwrap());
+    }
+
+    #[test]
+    fn inline_parallel_group_ands_with_incoming_power() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        // I0 AND (I1 OR I2) → Q0
+        let prog = single_rung_program(
+            "midpar",
+            vec![
+                LadderElement::ContactNo {
+                    id: "i0".into(),
+                    address: Address::discrete(0),
+                },
+                LadderElement::ParallelGroup {
+                    id: "pg".into(),
+                    branches: vec![
+                        vec![LadderElement::ContactNo {
+                            id: "i1".into(),
+                            address: Address::discrete(1),
+                        }],
+                        vec![LadderElement::ContactNo {
+                            id: "i2".into(),
+                            address: Address::discrete(2),
+                        }],
+                    ],
+                },
+                LadderElement::Coil {
+                    id: "q".into(),
+                    address: Address::coil(0),
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+        let mut s = ScanState::default();
+
+        mem.set_discrete(0, true).unwrap(); // I0=1, I1=I2=0 ⇒ false
+        s.scan(&eng, 20);
+        assert!(!mem.get_coil(0).unwrap());
+
+        mem.set_discrete(1, true).unwrap(); // I0=1, I1=1 ⇒ true
+        s.scan(&eng, 20);
+        assert!(mem.get_coil(0).unwrap());
+
+        mem.set_discrete(0, false).unwrap(); // incoming false, I1=I2=1 ⇒ false
+        mem.set_discrete(2, true).unwrap();
+        s.scan(&eng, 20);
+        assert!(
+            !mem.get_coil(0).unwrap(),
+            "inline OR group must AND with the incoming series power"
+        );
     }
 
     // Deterministic fuzz: the scan path must NEVER panic — for any well-typed

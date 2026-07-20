@@ -6,7 +6,13 @@
    * - continuous power-flow coloring
    * - OR branches above series
    */
-  import type { Address, LadderElement, PaletteKind, Rung as RungType } from "../../../shared/lib/types";
+  import type {
+    Address,
+    LadderElement,
+    PaletteKind,
+    RungNode,
+    Rung as RungType,
+  } from "../../../shared/lib/types";
   import LadderElementHost from "./LadderElementHost.svelte";
   import {
     seriesPowerIn,
@@ -18,12 +24,23 @@
     rung: RungType;
     networkNo: number;
     selected: boolean;
+    /** Which OR branch is the current insert target (null = main series). */
+    selectedBranch?: number | null;
+    /** Which inline parallel-group branch is the current insert target. */
+    selectedParallel?: { groupId: string; branch: number } | null;
     active: boolean;
     isElementActive: (id: string) => boolean;
     /** Live bit state for blue SET/coil highlight */
     isEnergized?: (addr: Address) => boolean;
+    /** Symbolic label lookup for an element id. */
+    labelFor?: (id: string) => string;
     online?: boolean;
     onSelect: () => void;
+    onSelectBranch: (branchIdx: number) => void;
+    onSelectParallelBranch: (groupId: string, branchIdx: number) => void;
+    onAddParallelBranch: (groupId: string) => void;
+    onRemoveParallelBranch: (groupId: string, branchIdx: number) => void;
+    onRemoveParallelGroup: (groupId: string) => void;
     onRemove: () => void;
     onComment: (c: string) => void;
     onAddKind: (kind: PaletteKind) => void;
@@ -41,11 +58,19 @@
     rung,
     networkNo,
     selected,
+    selectedBranch = null,
+    selectedParallel = null,
     active,
     isElementActive,
     isEnergized = () => false,
+    labelFor = () => "",
     online = false,
     onSelect,
+    onSelectBranch,
+    onSelectParallelBranch,
+    onAddParallelBranch,
+    onRemoveParallelBranch,
+    onRemoveParallelGroup,
     onRemove,
     onComment,
     onAddKind,
@@ -72,10 +97,22 @@
   /** Right rail hot if any output coil is active */
   const rightPower = $derived(split.right.some((e) => isElementActive(e.id)));
 
+  /** True when at least one parallel OR branch fully conducts. */
+  const orMerges = $derived(
+    (rung.or_branches ?? []).some((b) => b.length > 0 && pout(b, b.length - 1))
+  );
+
+  /** Power leaving the OR merge (or the left rail when there is no OR block). */
+  const feedLeft = $derived(rung.or_branches?.length ? online && orMerges : online);
+
   /** Power at end of left logic (feeds all parallel coils) */
   const feedCoils = $derived(
     online &&
-      (split.left.length ? pout(split.left, split.left.length - 1) : true)
+      (split.left.length
+        ? pout(split.left, split.left.length - 1)
+        : rung.or_branches?.length
+          ? orMerges
+          : true)
   );
 
   function onDrop(e: DragEvent) {
@@ -94,11 +131,17 @@
     if (kind && kind !== "or_branch") onAddToOrBranch(bi, kind);
   }
 
-  function pin(els: LadderElement[], i: number) {
-    return seriesPowerIn(els, i, isElementActive);
+  function nodeConducts(n: RungNode): boolean {
+    if (n.type === "parallel") {
+      return n.branches.some((b) => b.length > 0 && b.every((e) => isElementActive(e.id)));
+    }
+    return isElementActive(n.id);
   }
-  function pout(els: LadderElement[], i: number) {
-    return seriesPowerOut(els, i, isElementActive);
+  function pin(els: RungNode[], i: number) {
+    return seriesPowerIn(els, i, nodeConducts);
+  }
+  function pout(els: RungNode[], i: number) {
+    return seriesPowerOut(els, i, nodeConducts);
   }
   function energ(el: LadderElement): boolean {
     if ("address" in el && el.address) return isEnergized(el.address);
@@ -149,76 +192,166 @@
     <div class="rail" class:hot={online || anyActive}></div>
 
     <div class="center">
-      {#if rung.or_branches?.length}
-        <div class="or-block">
-          {#each rung.or_branches as branch, bi (bi)}
-            {@const bActive = branch.some((e) => isElementActive(e.id))}
-            <div
-              class="bus or-bus"
-              ondrop={(e) => onBranchDrop(e, bi)}
-              ondragover={onDragOver}
-              role="group"
-              aria-label={`OR branch ${bi}`}
-            >
-              <span class="or-id">OR{bi}</span>
-              <div class="flow">
-                <i class="seg s0" class:hot={online || bActive}></i>
-                {#each branch as el, ei (el.id)}
-                  {#if ei > 0}
-                    <i class="seg" class:hot={pout(branch, ei - 1)}></i>
-                  {/if}
-                  <LadderElementHost
-                    element={el}
-                    active={isElementActive(el.id)}
-                    powerIn={pin(branch, ei)}
-                    energized={energ(el)}
-                    compact
-                    onRemove={() => onRemoveFromOrBranch(bi, el.id)}
-                    onChange={(e) => onChangeOrElement(bi, e)}
-                    onEdit={() => onEditElement(el, bi)}
-                  />
-                {/each}
-                <i class="seg s1" class:hot={branch.length ? pout(branch, branch.length - 1) : false}
-                ></i>
-                <button
-                  type="button"
-                  class="btn tiny"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    onRemoveOrBranch(bi);
-                  }}>✕</button
-                >
-              </div>
-            </div>
-          {/each}
-          <div class="or-join">
-            <span>OR → series</span>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Main series: logic LEFT · grow wire · coils RIGHT (TIA) -->
       <div class="bus main">
         <div class="flow">
-          {#if series.length === 0}
-            <div class="placeholder">Drop contacts / coils here</div>
+          {#if series.length === 0 && !rung.or_branches?.length}
+            <div class="placeholder">Press 1–8 or use the toolbar to insert an instruction…</div>
           {:else}
             <!-- feed from left rail (always live in RUN) -->
             <i class="seg s0" class:hot={online}></i>
 
-            {#each split.left as el, ei (el.id)}
+            {#if rung.or_branches?.length}
+              <!-- Inline parallel OR block (contacts tied between two vertical buses) -->
+              <div
+                class="par"
+                role="group"
+                aria-label="Parallel OR block"
+                ondrop={(e) => onBranchDrop(e, 0)}
+                ondragover={onDragOver}
+              >
+                <div class="par-lbus" class:hot={online}></div>
+                <div class="par-rows">
+                  {#each rung.or_branches as branch, bi (bi)}
+                    {@const bActive = branch.some((e) => isElementActive(e.id))}
+                    <div
+                      class="par-row"
+                      class:sel={selectedBranch === bi}
+                      ondrop={(e) => onBranchDrop(e, bi)}
+                      ondragover={onDragOver}
+                      role="group"
+                      aria-label={`OR branch ${bi}`}
+                    >
+                      <button
+                        type="button"
+                        class="branch-tab"
+                        class:sel={selectedBranch === bi}
+                        title="Select this OR branch as insert target"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          onSelectBranch(bi);
+                        }}>OR{bi}</button
+                      >
+                      <i class="seg jin" class:hot={online || bActive}></i>
+                      {#each branch as el, ei (el.id)}
+                        {#if ei > 0}
+                          <i class="seg" class:hot={pout(branch, ei - 1)}></i>
+                        {/if}
+                        <LadderElementHost
+                          element={el}
+                          label={labelFor(el.id)}
+                          active={isElementActive(el.id)}
+                          powerIn={online && pin(branch, ei)}
+                          energized={energ(el)}
+                          compact
+                          onRemove={() => onRemoveFromOrBranch(bi, el.id)}
+                          onChange={(e) => onChangeOrElement(bi, e)}
+                          onEdit={() => onEditElement(el, bi)}
+                        />
+                      {/each}
+                      <i
+                        class="seg jout"
+                        class:hot={branch.length ? pout(branch, branch.length - 1) : false}
+                      ></i>
+                      <button
+                        type="button"
+                        class="btn tiny rm"
+                        title="Remove branch"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          onRemoveOrBranch(bi);
+                        }}>✕</button
+                      >
+                    </div>
+                  {/each}
+                </div>
+                <div class="par-rbus" class:hot={online && orMerges}></div>
+              </div>
+              <i class="seg mergeout" class:hot={feedLeft}></i>
+            {/if}
+
+            {#each split.left as node, ei (node.id)}
               {#if ei > 0}
                 <i class="seg" class:hot={pout(split.left, ei - 1)}></i>
               {/if}
-              <LadderElementHost
-                element={el}
-                active={isElementActive(el.id)}
-                powerIn={online && pin(split.left, ei)}
-                energized={energ(el)}
-                onRemove={() => onRemoveElement(el.id)}
-                onChange={onChangeElement}
-                onEdit={() => onEditElement(el, null)}
-              />
+              {#if node.type === "parallel"}
+                {@const pfeed = ei === 0 ? feedLeft : online && pin(split.left, ei)}
+                <div class="par inline" role="group" aria-label="Parallel group">
+                  <div class="par-lbus" class:hot={pfeed}></div>
+                  <div class="par-rows">
+                    {#each node.branches as branch, bi (bi)}
+                      {@const psel =
+                        !!selectedParallel &&
+                        selectedParallel.groupId === node.id &&
+                        selectedParallel.branch === bi}
+                      <div class="par-row" class:sel={psel}>
+                        <button
+                          type="button"
+                          class="branch-tab"
+                          class:sel={psel}
+                          title="Select this parallel branch as insert target"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            onSelectParallelBranch(node.id, bi);
+                          }}>∥{bi}</button
+                        >
+                        <i class="seg jin" class:hot={pfeed}></i>
+                        {#each branch as el, ci (el.id)}
+                          {#if ci > 0}
+                            <i class="seg" class:hot={isElementActive(branch[ci - 1].id)}></i>
+                          {/if}
+                          <LadderElementHost
+                            element={el}
+                            label={labelFor(el.id)}
+                            active={isElementActive(el.id)}
+                            powerIn={pfeed && (ci === 0 || isElementActive(branch[ci - 1].id))}
+                            energized={energ(el)}
+                            compact
+                            onRemove={() => onRemoveElement(el.id)}
+                            onChange={onChangeElement}
+                            onEdit={() => onEditElement(el, null)}
+                          />
+                        {/each}
+                        <i
+                          class="seg jout"
+                          class:hot={branch.length
+                            ? isElementActive(branch[branch.length - 1].id)
+                            : false}
+                        ></i>
+                        <button
+                          type="button"
+                          class="btn tiny rm"
+                          title="Remove this branch"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            onRemoveParallelBranch(node.id, bi);
+                          }}>✕</button
+                        >
+                      </div>
+                    {/each}
+                    <button
+                      type="button"
+                      class="add-branch"
+                      title="Add a parallel branch"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        onAddParallelBranch(node.id);
+                      }}>＋ branch</button
+                    >
+                  </div>
+                  <div class="par-rbus" class:hot={online && nodeConducts(node)}></div>
+                </div>
+              {:else}
+                <LadderElementHost
+                  element={node}
+                  label={labelFor(node.id)}
+                  active={isElementActive(node.id)}
+                  powerIn={ei === 0 ? feedLeft : online && pin(split.left, ei)}
+                  energized={energ(node)}
+                  onRemove={() => onRemoveElement(node.id)}
+                  onChange={onChangeElement}
+                  onEdit={() => onEditElement(node, null)}
+                />
+              {/if}
             {/each}
 
             <!-- Long run to right-hand coil column (TIA) -->
@@ -235,6 +368,7 @@
                     <i class="seg coil-in" class:hot={feedCoils}></i>
                     <LadderElementHost
                       element={el}
+                      label={labelFor(el.id)}
                       active={isElementActive(el.id)}
                       powerIn={feedCoils}
                       energized={energ(el)}
@@ -442,44 +576,98 @@
     font-style: italic;
   }
 
-  .or-block {
-    margin: 2px 4px 0;
-    padding: 2px 0 0;
-    border-left: 2px solid #6a7a8a;
-    background: rgba(255, 255, 255, 0.55);
+  /* Inline parallel OR block: rows between a left bus and a merge bus */
+  .par {
+    display: flex;
+    align-items: stretch;
+    flex-shrink: 0;
+    align-self: center;
   }
-  .or-bus {
+  .par-lbus,
+  .par-rbus {
+    width: 2px;
+    background: #1a1a1a;
+    flex-shrink: 0;
+    align-self: stretch;
+    z-index: 1;
+  }
+  .par-lbus.hot,
+  .par-rbus.hot {
+    background: #00a651;
+    box-shadow: 0 0 3px rgba(0, 166, 81, 0.45);
+  }
+  .par-rows {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .par-row {
     position: relative;
+    display: flex;
+    align-items: center;
     min-height: 84px;
-    border-bottom: 1px dotted #c5ccd2;
   }
-  .or-bus:last-of-type {
-    border-bottom: none;
+  .par-row.sel {
+    background: rgba(0, 120, 168, 0.08);
+    outline: 1px dashed #0078a8;
+    outline-offset: -2px;
   }
-  .or-id {
+  .par-row .seg.jin {
+    width: 10px;
+  }
+  .par-row .seg.jout {
+    width: 10px;
+  }
+  .branch-tab {
     position: absolute;
     left: 2px;
     top: 2px;
+    z-index: 5;
     font-size: 9px;
     font-weight: 700;
     font-family: Consolas, monospace;
     color: #5a6570;
-    z-index: 5;
     background: #e8eef2;
-    padding: 0 3px;
+    border: 1px solid #c5ccd2;
+    border-radius: 2px;
+    padding: 0 4px;
+    cursor: pointer;
+    line-height: 1.4;
   }
-  .or-join {
-    text-align: center;
-    padding: 2px 0 3px;
+  .branch-tab:hover {
+    border-color: #0078a8;
+    color: #005f87;
   }
-  .or-join span {
+  .branch-tab.sel {
+    background: #0078a8;
+    color: #fff;
+    border-color: #005f87;
+  }
+  .btn.tiny.rm {
+    align-self: center;
+  }
+  .seg.mergeout {
+    width: 16px;
+  }
+  .par.inline {
+    align-self: center;
+  }
+  .add-branch {
+    align-self: flex-start;
+    margin: 2px 0 0 20px;
     font-size: 9px;
     font-family: Consolas, monospace;
+    border: 1px dashed #9aa3ab;
+    background: #f4f7f9;
     color: #5a6570;
-    border: 1px solid #c5ccd2;
-    background: #fff;
-    padding: 0 6px;
     border-radius: 2px;
+    padding: 1px 6px;
+    cursor: pointer;
+    line-height: 1.4;
+  }
+  .add-branch:hover {
+    border-color: #0078a8;
+    color: #005f87;
   }
 
   /* Parallel coils — stacked under each other (TIA multi-output) */

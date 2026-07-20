@@ -1,57 +1,115 @@
 <script lang="ts">
   /**
-   * Generic TIA-style function block box used by timers, counters, math, move, compare.
+   * Function-block glyph for timers, counters, math, move and compare —
+   * a compact instruction box with a mnemonic header, parameter rows
+   * (label · value) and left/right power stubs so it sits on the rung.
    */
+  interface Row {
+    k: string;
+    v: string;
+  }
   interface Props {
     title: string;
-    lines: string[];
+    subtitle?: string;
+    rows: Row[];
     hot?: boolean;
   }
-  let { title, lines, hot = false }: Props = $props();
+  let { title, subtitle = "", rows, hot = false }: Props = $props();
 </script>
 
-<div class="fb" class:hot>
-  <div class="fb-h">{title}</div>
-  <div class="fb-b">
-    {#each lines as line}
-      <div class="dim">{line}</div>
-    {/each}
+<div class="fb-wrap" class:hot>
+  <i class="stub left"></i>
+  <div class="fb">
+    <div class="fb-h">
+      <span class="mn">{title}</span>
+      {#if subtitle}<span class="sub">{subtitle}</span>{/if}
+    </div>
+    <div class="fb-b">
+      {#each rows as r}
+        <div class="fb-row">
+          <span class="k">{r.k}</span>
+          <span class="v">{r.v}</span>
+        </div>
+      {/each}
+    </div>
   </div>
+  <i class="stub right"></i>
 </div>
 
 <style>
-  .fb {
-    border: 2px solid #1a1a1a;
-    background: #fff;
-    min-width: 90px;
+  .fb-wrap {
+    display: flex;
+    align-items: center;
   }
-  .fb.hot {
+  .stub {
+    width: 6px;
+    height: 2px;
+    background: #1a1a1a;
+    flex-shrink: 0;
+  }
+  .fb-wrap.hot .stub {
+    background: #00a651;
+  }
+  .fb {
+    min-width: 96px;
+    border: 1.5px solid #1a1a1a;
+    background: #fff;
+    border-radius: 2px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+  }
+  .fb-wrap.hot .fb {
     border-color: #00a651;
-    background: #f3fbf6;
+    box-shadow: 0 0 6px rgba(0, 166, 81, 0.35);
   }
   .fb-h {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 6px;
+    padding: 2px 6px;
+    border-bottom: 1.5px solid #1a1a1a;
+    background: linear-gradient(180deg, #2a6f9e, #1a557d);
+    color: #fff;
+  }
+  .fb-h .mn {
+    font-family: "Segoe UI", sans-serif;
     font-size: 11px;
     font-weight: 800;
-    text-align: center;
-    padding: 2px 5px;
-    border-bottom: 1px solid #1a1a1a;
-    background: linear-gradient(180deg, #eef3f7, #dde5eb);
-    color: #003d5c;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
   }
-  .fb.hot .fb-h {
-    border-bottom-color: #00a651;
-    background: linear-gradient(180deg, #e0f5ea, #c8ecd8);
-    color: #006633;
-  }
-  .fb-b {
+  .fb-h .sub {
     font-family: Consolas, monospace;
     font-size: 9px;
-    padding: 3px 5px 4px;
-    line-height: 1.35;
-    color: #222;
+    font-weight: 700;
+    color: #bfe0f2;
   }
-  .dim {
+  .fb-wrap.hot .fb-h {
+    background: linear-gradient(180deg, #17a25a, #0c8347);
+    border-bottom-color: #00a651;
+  }
+  .fb-b {
+    padding: 2px 0;
+  }
+  .fb-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-family: Consolas, monospace;
+    font-size: 9.5px;
+    line-height: 1.55;
+    padding: 0 8px;
+  }
+  .fb-row .k {
     color: #5a6570;
+    font-weight: 600;
+  }
+  .fb-row .v {
+    color: #003d5c;
+    font-weight: 700;
+  }
+  .fb-wrap.hot .fb-row .v {
+    color: #006633;
   }
 </style>
+
