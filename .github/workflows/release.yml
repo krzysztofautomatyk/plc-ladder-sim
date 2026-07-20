@@ -68,7 +68,7 @@ jobs:
 
       # releaseBody must be a single quoted string (ProjectToText lesson: multi-line
       # YAML maps break tauri-action / release creation on some runners).
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
