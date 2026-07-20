@@ -86,6 +86,7 @@ UI (Svelte 5) ──invoke/events──▶ Tauri commands
 - Full layout: **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**
 - Modbus map & diagnostics: **[docs/MODBUS.md](./docs/MODBUS.md)**
 - Installers & tags: **[docs/RELEASES.md](./docs/RELEASES.md)**
+- AI agents & GitHub Copilot (PL/EN): **[docs/AI_AGENTS.md](./docs/AI_AGENTS.md)**
 
 ### Instruction packages (frontend)
 
