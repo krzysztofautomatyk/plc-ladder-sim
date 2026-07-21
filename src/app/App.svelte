@@ -17,6 +17,7 @@
   import MathHelpView from "../features/docs/MathHelpView.svelte";
   import AuditPanel from "../features/audit/AuditPanel.svelte";
   import LogsView from "../features/diagnostics/LogsView.svelte";
+  import MemoryView from "../features/memory/MemoryView.svelte";
 
   let fileInput: HTMLInputElement | undefined = $state();
   let treeOpen = $state(true);
@@ -44,6 +45,7 @@
   const nav: { id: AppView; label: string; ico: string; group?: string }[] = [
     { id: "ladder", label: "Main [OB1]", ico: "▦", group: "Program blocks" },
     { id: "tags", label: "PLC tags", ico: "☰", group: "PLC data" },
+    { id: "memory", label: "Memory (M/MR)", ico: "▧", group: "PLC data" },
     { id: "math", label: "Math operations", ico: "∑", group: "PLC data" },
     { id: "modbus", label: "Modbus TCP", ico: "⇄", group: "Device config" },
     { id: "audit", label: "Audit trail", ico: "📋", group: "Diagnostics" },
@@ -195,6 +197,8 @@
           </div>
         {:else if plc.view === "tags"}
           <SymbolTableView />
+        {:else if plc.view === "memory"}
+          <MemoryView />
         {:else if plc.view === "modbus"}
           <ModbusConfigView />
         {:else if plc.view === "math"}

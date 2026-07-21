@@ -231,7 +231,15 @@ export interface LogEntry {
   fields: string;
 }
 
-export type AppView = "ladder" | "tags" | "modbus" | "math" | "audit" | "watch" | "logs";
+export type AppView =
+  | "ladder"
+  | "tags"
+  | "modbus"
+  | "math"
+  | "audit"
+  | "watch"
+  | "logs"
+  | "memory";
 
 export type PaletteKind =
   | "contact_no"
