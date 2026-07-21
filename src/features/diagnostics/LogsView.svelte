@@ -1,9 +1,9 @@
 <script lang="ts">
   /**
-   * Diagnostics — live application log viewer.
+   * Diagnostics — live application log viewer (TIA-style, matches Audit trail).
    *
    * Reads the in-memory tracing ring buffer via `get_logs`, with a level filter,
-   * auto-refresh, clear and copy-to-clipboard. This is where Modbus TCP activity
+   * auto-refresh, freeze-scroll, clear and copy. This is where Modbus TCP activity
    * (client connect / request / exception / disconnect) and bind errors surface,
    * so operators can diagnose connectivity without an attached console.
    */
@@ -54,47 +54,56 @@
 </script>
 
 <div class="logs-view">
-  <div class="logs-toolbar">
-    <strong>Application logs</strong>
-    <label>
-      Level
-      <select bind:value={level} onchange={refresh}>
-        {#each levels as l}
-          <option value={l}>{l}</option>
-        {/each}
-      </select>
-    </label>
-    <label class="chk">
-      <input type="checkbox" bind:checked={auto} /> Auto-refresh
-    </label>
-    <label class="chk">
-      <input type="checkbox" bind:checked={paused} /> Freeze scroll
-    </label>
-    <span class="spacer"></span>
-    <span class="count">{plc.logs.length} lines</span>
-    <button type="button" onclick={refresh}>Refresh</button>
-    <button type="button" onclick={copyAll}>Copy</button>
-    <button type="button" class="danger" onclick={clearLogs}>Clear</button>
+  <div class="tia-page-header">
+    <div>
+      <h1>Logs</h1>
+      <p>Live application &amp; Modbus TCP diagnostics (in-memory ring buffer).</p>
+    </div>
+    <div class="tia-actions">
+      <label class="ctl">
+        Level
+        <select bind:value={level} onchange={refresh}>
+          {#each levels as l}
+            <option value={l}>{l}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="ctl"><input type="checkbox" bind:checked={auto} /> Auto</label>
+      <label class="ctl"><input type="checkbox" bind:checked={paused} /> Freeze</label>
+      <span class="tia-badge">{plc.logs.length} lines</span>
+      <button type="button" class="tia-btn" onclick={refresh}>Refresh</button>
+      <button type="button" class="tia-btn" onclick={copyAll}>Copy</button>
+      <button type="button" class="tia-btn" onclick={clearLogs}>Clear</button>
+    </div>
   </div>
 
-  <div class="logs-body" bind:this={scroller}>
+  <div class="logs-scroll" bind:this={scroller}>
     {#if plc.logs.length === 0}
-      <div class="empty">
+      <p class="empty">
         No log lines at this level yet. Start the simulation or the Modbus slave and connect a
         client — connection, request and error events appear here.
-      </div>
+      </p>
     {:else}
-      <table>
+      <table class="tia-table logs-table">
+        <thead>
+          <tr>
+            <th class="col-ts">Time</th>
+            <th class="col-lvl">Level</th>
+            <th class="col-src">Source</th>
+            <th>Message</th>
+          </tr>
+        </thead>
         <tbody>
           {#each plc.logs as line (line.seq)}
-            <tr class={`lvl-${line.level}`}>
-              <td class="ts">{line.ts}</td>
-              <td class="lvl">{line.level.toUpperCase()}</td>
-              <td class="target">{line.target}</td>
-              <td class="msg">
-                {line.message}
-                {#if line.fields}<span class="fields">{line.fields}</span>{/if}
-              </td>
+            <tr>
+              <td class="col-ts mono">{line.ts}</td>
+              <td class="col-lvl"
+                ><span class={`lvl lvl-${line.level}`}>{line.level.toUpperCase()}</span></td
+              >
+              <td class="col-src mono">{line.target}</td>
+              <td class="msg"
+                >{line.message}{#if line.fields}<span class="fields">{line.fields}</span>{/if}</td
+              >
             </tr>
           {/each}
         </tbody>
@@ -108,105 +117,86 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: #0f1115;
-    color: #d6dae0;
-    font-family: "Cascadia Code", Consolas, monospace;
+    background: var(--tia-paper);
   }
-  .logs-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 6px 10px;
-    background: #1a1d23;
-    border-bottom: 1px solid #2a2e36;
-    font-size: 12px;
-    color: #aeb4bd;
-  }
-  .logs-toolbar .spacer {
-    flex: 1;
-  }
-  .logs-toolbar label {
+  .tia-actions .ctl {
     display: flex;
     align-items: center;
     gap: 4px;
+    font-size: 12px;
+    color: var(--tia-muted);
   }
-  .logs-toolbar .chk {
-    user-select: none;
+  .tia-actions select {
+    font-size: 12px;
+    padding: 2px 4px;
+    border: 1px solid var(--tia-border);
+    border-radius: 3px;
+    background: #fff;
   }
-  .logs-toolbar button {
-    background: #262b33;
-    color: #d6dae0;
-    border: 1px solid #3a404a;
-    border-radius: 4px;
-    padding: 3px 10px;
-    cursor: pointer;
-  }
-  .logs-toolbar button:hover {
-    background: #303743;
-  }
-  .logs-toolbar button.danger {
-    border-color: #6b2b2b;
-    color: #ffb4b4;
-  }
-  .count {
-    color: #7d8590;
-  }
-  .logs-body {
+  .logs-scroll {
     flex: 1;
     overflow: auto;
-    padding: 4px 0;
+    padding: 8px;
   }
   .empty {
-    padding: 24px;
-    color: #7d8590;
+    padding: 20px;
+    color: var(--tia-muted);
+    font-size: 12px;
     max-width: 640px;
   }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
+  .logs-table {
+    font-family: var(--font-mono);
+    font-size: 11px;
   }
-  td {
-    padding: 1px 8px;
+  .logs-table td {
     vertical-align: top;
     white-space: pre-wrap;
     word-break: break-word;
   }
-  td.ts {
-    color: #6f7680;
+  .col-ts {
     white-space: nowrap;
+    width: 1%;
+    color: var(--tia-muted);
   }
-  td.lvl {
+  .col-lvl {
     white-space: nowrap;
-    font-weight: 700;
-    text-align: right;
+    width: 1%;
+    text-align: center;
   }
-  td.target {
-    color: #8a94a6;
+  .col-src {
     white-space: nowrap;
+    width: 1%;
+    color: var(--tia-blue-dark);
+  }
+  .mono {
+    font-family: var(--font-mono);
   }
   .fields {
-    color: #8a94a6;
+    color: var(--tia-muted);
     margin-left: 6px;
   }
-  tr.lvl-error td.lvl,
-  tr.lvl-error td.msg {
-    color: #ff6b6b;
+  .lvl {
+    display: inline-block;
+    min-width: 44px;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-weight: 700;
+    font-size: 10px;
+    color: #fff;
   }
-  tr.lvl-warn td.lvl,
-  tr.lvl-warn td.msg {
-    color: #ffcc66;
+  .lvl-error {
+    background: var(--tia-fault);
   }
-  tr.lvl-info td.lvl {
-    color: #66d9a6;
+  .lvl-warn {
+    background: var(--tia-warn);
   }
-  tr.lvl-debug td.lvl {
-    color: #6fb3ff;
+  .lvl-info {
+    background: var(--tia-online);
   }
-  tr.lvl-trace td.lvl {
-    color: #9aa2ad;
+  .lvl-debug {
+    background: var(--tia-blue-mid);
   }
-  tr:hover {
-    background: #171a20;
+  .lvl-trace {
+    background: var(--tia-muted);
   }
 </style>
