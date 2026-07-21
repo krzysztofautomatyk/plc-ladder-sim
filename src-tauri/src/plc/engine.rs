@@ -6,6 +6,8 @@
 
 use super::compiler::{CmpOp, CompiledProgram, Instruction, MathOp, MemArea};
 use super::memory::{PlcMemory, PlcRunState};
+#[cfg(test)]
+use super::memory::{COUNTER_HR_BASE, TIMER_HR_BASE};
 use parking_lot::RwLock;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -200,8 +202,8 @@ impl PlcEngine {
             match result {
                 Ok(tick) => {
                     let _ = app.emit("plc://scan-tick", &tick);
-                    // Compact memory event every scan for live table
-                    let snap = self.memory.snapshot_compact(64, 32);
+                    // Canonical UI compact image (covers R40–R42 demo, I/Q 0–127, M/MR head)
+                    let snap = self.memory.snapshot_ui();
                     let _ = app.emit("plc://memory", &snap);
                 }
                 Err(e) => {
@@ -632,22 +634,16 @@ impl PlcEngine {
     }
 
     fn write_timer_regs(&self, timer_index: u16, st: &TimerState) -> Result<(), ScanError> {
-        let base = timer_index.saturating_mul(2);
+        // UI image + holding bank R2048+ (TV / T done bit for MOVE/contacts).
         self.memory
-            .set_holding(base, st.et_ms.min(u16::MAX as u32) as u16)
-            .map_err(|e| ScanError::Memory(e.to_string()))?;
-        self.memory
-            .set_holding(base.saturating_add(1), if st.q { 1 } else { 0 })
+            .set_timer_image(timer_index, st.et_ms.min(u16::MAX as u32) as u16, st.q)
             .map_err(|e| ScanError::Memory(e.to_string()))
     }
 
     fn write_counter_regs(&self, counter_index: u16, st: &CounterState) -> Result<(), ScanError> {
-        let base = counter_index.saturating_mul(2);
+        // UI image + holding bank R3072+ (CV / C done bit for MOVE/contacts).
         self.memory
-            .set_holding(base, st.cv)
-            .map_err(|e| ScanError::Memory(e.to_string()))?;
-        self.memory
-            .set_holding(base.saturating_add(1), if st.q { 1 } else { 0 })
+            .set_counter_image(counter_index, st.cv, st.q)
             .map_err(|e| ScanError::Memory(e.to_string()))
     }
 
@@ -1135,12 +1131,13 @@ mod tests {
             eng.execute_scan(20, &mut timers, &mut counters, &mut edges)
                 .unwrap();
         }
-        let et_mid = mem.get_holding(10).unwrap(); // timer 5 * 2
+        let et_addr = TIMER_HR_BASE + 5 * 2;
+        let et_mid = mem.get_holding(et_addr).unwrap();
         assert!(et_mid >= 60);
         mem.set_discrete(0, false).unwrap();
         eng.execute_scan(20, &mut timers, &mut counters, &mut edges)
             .unwrap();
-        let et_hold = mem.get_holding(10).unwrap();
+        let et_hold = mem.get_holding(et_addr).unwrap();
         assert_eq!(et_hold, et_mid, "RTO must retain ET when IN drops");
     }
 
@@ -1333,12 +1330,12 @@ mod tests {
             scan.scan(&eng, 20);
         }
         assert!(mem.get_coil(2).unwrap());
-        assert_eq!(mem.get_holding(0).unwrap(), 3);
+        assert_eq!(mem.get_holding(COUNTER_HR_BASE).unwrap(), 3);
 
         mem.set_discrete(1, true).unwrap();
         scan.scan(&eng, 20);
         assert!(!mem.get_coil(2).unwrap());
-        assert_eq!(mem.get_holding(0).unwrap(), 0);
+        assert_eq!(mem.get_holding(COUNTER_HR_BASE).unwrap(), 0);
     }
 
     #[test]
@@ -1367,7 +1364,8 @@ mod tests {
         mem.set_discrete(1, true).unwrap();
         scan.scan(&eng, 20);
         mem.set_discrete(1, false).unwrap();
-        assert_eq!(mem.get_holding(4).unwrap(), 2);
+        let c2 = COUNTER_HR_BASE + 2 * 2;
+        assert_eq!(mem.get_holding(c2).unwrap(), 2);
 
         for _ in 0..2 {
             mem.set_discrete(0, true).unwrap();
@@ -1376,7 +1374,7 @@ mod tests {
             scan.scan(&eng, 20);
         }
         assert!(mem.get_coil(3).unwrap());
-        assert_eq!(mem.get_holding(4).unwrap(), 0);
+        assert_eq!(mem.get_holding(c2).unwrap(), 0);
     }
 
     #[test]

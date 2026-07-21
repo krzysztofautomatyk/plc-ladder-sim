@@ -55,7 +55,7 @@ export function createDemoProgram(): LadderProgram {
       },
       {
         id: "rung_3",
-        comment: "If MW40 >= MW41 then MOVE MW40→MW42 and Q3",
+        comment: "If R40 >= R41 then MOVE R40→R42 and Q3",
         enabled: true,
         or_branches: [],
         elements: [

@@ -46,7 +46,7 @@
   const nav: { id: AppView; label: string; ico: string; group?: string }[] = [
     { id: "ladder", label: "Main [OB1]", ico: "▦", group: "Program blocks" },
     { id: "tags", label: "PLC tags", ico: "☰", group: "PLC data" },
-    { id: "memory", label: "Memory (M/MR)", ico: "▧", group: "PLC data" },
+    { id: "memory", label: "Process image", ico: "▧", group: "PLC data" },
     { id: "alloc", label: "Memory allocation", ico: "▤", group: "PLC data" },
     { id: "math", label: "Math operations", ico: "∑", group: "PLC data" },
     { id: "modbus", label: "Modbus TCP", ico: "⇄", group: "Device config" },

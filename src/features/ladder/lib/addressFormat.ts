@@ -1,15 +1,19 @@
 /**
- * User-facing PLC variable notation:
- *   I0, I0.0     → discrete input
- *   Q1, Q1.0     → coil / output
- *   M2           → internal marker bit (ladder-only, never on Modbus)
- *   MR5, MR5.3   → internal memory register / bit-in-register (ladder-only, never on Modbus)
- *   R10          → holding word (register, Modbus 4x)
- *   R1.5         → bit 5 of holding register 1
+ * Canonical PLC variable notation:
+ *   I / Q / M / MR / R / IW  — process image
+ *   TV0 / CV0               — timer/counter current value (word) → holding bank
+ *   T0 / C0                 — timer/counter done bit (word Q in bank)
+ *
+ * TV/CV compile as holding addresses so MOVE/math can copy T/C → R.
+ * Pure bit areas (I/Q/M) reject .bit syntax.
  */
 import type { Address, MemArea } from "../../../shared/lib/types";
 
-export type VarPrefix = "I" | "Q" | "M" | "R" | "MR";
+/** Must match backend `TIMER_HR_BASE` / `COUNTER_HR_BASE`. */
+export const TIMER_HR_BASE = 2048;
+export const COUNTER_HR_BASE = 3072;
+
+export type VarPrefix = "I" | "Q" | "M" | "R" | "MR" | "IW" | "TV" | "CV" | "T" | "C";
 
 export interface ParsedVar {
   prefix: VarPrefix;
@@ -19,7 +23,23 @@ export interface ParsedVar {
   display: string;
 }
 
-/** Map UI prefix → memory area */
+export function timerValueAddress(n: number): Address {
+  return { area: "holding", index: TIMER_HR_BASE + 2 * n };
+}
+
+export function timerDoneAddress(n: number): Address {
+  return { area: "holding", index: TIMER_HR_BASE + 2 * n + 1 };
+}
+
+export function counterValueAddress(n: number): Address {
+  return { area: "holding", index: COUNTER_HR_BASE + 2 * n };
+}
+
+export function counterDoneAddress(n: number): Address {
+  return { area: "holding", index: COUNTER_HR_BASE + 2 * n + 1 };
+}
+
+/** Map UI prefix → memory area (TV/CV/T/C map via dedicated helpers in parse). */
 export function prefixToArea(prefix: VarPrefix): MemArea {
   switch (prefix) {
     case "I":
@@ -31,7 +51,13 @@ export function prefixToArea(prefix: VarPrefix): MemArea {
     case "MR":
       return "memory_word";
     case "R":
+    case "TV":
+    case "CV":
+    case "T":
+    case "C":
       return "holding";
+    case "IW":
+      return "input_reg";
   }
 }
 
@@ -48,8 +74,27 @@ export function areaToPrefix(area: MemArea, _hasBit: boolean): VarPrefix {
     case "holding":
       return "R";
     case "input_reg":
-      return "R";
+      return "IW";
   }
+}
+
+/** Pretty-print holding bank addresses as TV/CV/T/C when they land in T/C banks. */
+function formatHolding(index: number, bit: number | null | undefined): string {
+  if (bit != null) {
+    return `R${index}.${bit}`;
+  }
+  // Timer value bank: even offsets from TIMER_HR_BASE
+  if (index >= TIMER_HR_BASE && index < TIMER_HR_BASE + 512) {
+    const off = index - TIMER_HR_BASE;
+    if (off % 2 === 0) return `TV${off / 2}`;
+    return `T${(off - 1) / 2}`;
+  }
+  if (index >= COUNTER_HR_BASE && index < COUNTER_HR_BASE + 512) {
+    const off = index - COUNTER_HR_BASE;
+    if (off % 2 === 0) return `CV${off / 2}`;
+    return `C${(off - 1) / 2}`;
+  }
+  return `R${index}`;
 }
 
 export function formatAddress(addr: Address | null | undefined): string {
@@ -57,39 +102,69 @@ export function formatAddress(addr: Address | null | undefined): string {
   const bit = addr.bit;
   switch (addr.area) {
     case "discrete":
-      return bit != null ? `I${addr.index}.${bit}` : `I${addr.index}`;
+      return `I${addr.index}`;
     case "coil":
-      return bit != null ? `Q${addr.index}.${bit}` : `Q${addr.index}`;
+      return `Q${addr.index}`;
     case "memory_bit":
       return `M${addr.index}`;
     case "memory_word":
       return bit != null ? `MR${addr.index}.${bit}` : `MR${addr.index}`;
     case "holding":
-      return bit != null ? `R${addr.index}.${bit}` : `R${addr.index}`;
+      return formatHolding(addr.index, bit);
     case "input_reg":
       return bit != null ? `IW${addr.index}.${bit}` : `IW${addr.index}`;
   }
 }
 
 /**
- * Parse strings like: I0, Q1, M2, MR5, MR1.5, R10, R1.5, %I0.0, i0
+ * Parse: I0, Q1, M2, MR5, R10, R1.5, IW4, MW20, TV0, CV3, T0, C1, %I0
  */
 export function parseVarString(raw: string): ParsedVar | null {
   const s = raw.trim().toUpperCase().replace(/^%/, "");
-  const m = s.match(/^(I|Q|MR|M|R|IW|MW)(\d+)(?:\.(\d+))?$/);
+  // Longest tokens first: TV/CV/MR/IW/MW before T/C/M/I/R.
+  const m = s.match(/^(TV|CV|MR|IW|MW|T|C|I|Q|M|R)(\d+)(?:\.(\d+))?$/);
   if (!m) return null;
+
   let token = m[1] as string;
-  if (token === "MW") token = "R"; // MW = holding word (Modbus 4x)
-  if (token === "IW") token = "R";
-  const p = token as VarPrefix;
-  if (p !== "I" && p !== "Q" && p !== "M" && p !== "MR" && p !== "R") return null;
+  if (token === "MW") token = "R";
+
   const index = Number(m[2]);
   if (!Number.isFinite(index) || index < 0 || index > 65535) return null;
+
   let bit: number | null = m[3] != null ? Number(m[3]) : null;
   if (bit != null && (bit < 0 || bit > 15)) return null;
 
-  // Internal marker bit (M) is a pure bit area — no sub-bit.
-  if (p === "M") bit = null;
+  // Timer / counter aliases → holding banks (engine-readable for MOVE).
+  if (token === "TV") {
+    if (bit != null || index > 255) return null;
+    const address = timerValueAddress(index);
+    return { prefix: "TV", index, bit: null, address, display: `TV${index}` };
+  }
+  if (token === "CV") {
+    if (bit != null || index > 255) return null;
+    const address = counterValueAddress(index);
+    return { prefix: "CV", index, bit: null, address, display: `CV${index}` };
+  }
+  if (token === "T") {
+    if (bit != null || index > 255) return null;
+    const address = timerDoneAddress(index);
+    return { prefix: "T", index, bit: null, address, display: `T${index}` };
+  }
+  if (token === "C") {
+    if (bit != null || index > 255) return null;
+    const address = counterDoneAddress(index);
+    return { prefix: "C", index, bit: null, address, display: `C${index}` };
+  }
+
+  const p = token as VarPrefix;
+  if (p !== "I" && p !== "Q" && p !== "M" && p !== "MR" && p !== "R" && p !== "IW") {
+    return null;
+  }
+
+  // Pure bit areas — no sub-bit addressing.
+  if (p === "I" || p === "Q" || p === "M") {
+    if (bit != null) return null;
+  }
 
   const address: Address = { area: prefixToArea(p), index };
   if (bit != null) address.bit = bit;
@@ -104,6 +179,24 @@ export function addressToForm(addr: Address): {
   bit: number | null;
   useBit: boolean;
 } {
+  // Prefer T/C aliases when holding index is in a bank.
+  if (addr.area === "holding" && addr.bit == null) {
+    const i = addr.index;
+    if (i >= TIMER_HR_BASE && i < TIMER_HR_BASE + 512) {
+      const off = i - TIMER_HR_BASE;
+      if (off % 2 === 0) {
+        return { prefix: "TV", index: off / 2, bit: null, useBit: false };
+      }
+      return { prefix: "T", index: (off - 1) / 2, bit: null, useBit: false };
+    }
+    if (i >= COUNTER_HR_BASE && i < COUNTER_HR_BASE + 512) {
+      const off = i - COUNTER_HR_BASE;
+      if (off % 2 === 0) {
+        return { prefix: "CV", index: off / 2, bit: null, useBit: false };
+      }
+      return { prefix: "C", index: (off - 1) / 2, bit: null, useBit: false };
+    }
+  }
   const prefix = areaToPrefix(addr.area, addr.bit != null);
   return {
     prefix,
@@ -119,6 +212,11 @@ export function formToAddress(
   bit: number | null,
   forceBit: boolean
 ): Address {
+  if (prefix === "TV") return timerValueAddress(index);
+  if (prefix === "CV") return counterValueAddress(index);
+  if (prefix === "T") return timerDoneAddress(index);
+  if (prefix === "C") return counterDoneAddress(index);
+
   const area = prefixToArea(prefix);
   const supportsBit = area === "holding" || area === "input_reg" || area === "memory_word";
   const useBit = supportsBit && (forceBit || bit != null);
@@ -132,63 +230,31 @@ export function formToAddress(
 export const ADDRESS_HELP_MD = `
 # PLC variable addressing
 
-## Prefixes
+## Process image
 
 | Prefix | Meaning | Examples |
 |---------|-----------|-----------|
-| **I** | Discrete input | \`I0\`, \`I12\` |
-| **Q** | Output / coil | \`Q0\`, \`Q3\` |
-| **M** | Internal marker bit (ladder-only, **never on Modbus**) | \`M0\`, \`M12\` |
-| **MR** | Internal memory register (ladder-only, **never on Modbus**) | \`MR0\`, \`MR1.3\` |
-| **R** | Holding word register (Modbus 4x / MW) | \`R10\`, \`R1.3\` |
+| **I** | Discrete input | \`I0\` |
+| **Q** | Output / coil | \`Q0\` |
+| **M** | Marker bit | \`M0\` |
+| **MR** | Internal register | \`MR0\`, \`MR1.3\` |
+| **R** | Holding word | \`R10\`, \`R1.3\` |
+| **IW** | Input register | \`IW0\` |
 
-## Register bit syntax
+## Timers / counters (live values you can MOVE)
 
-\`\`\`
-R<register_number>.<bit_number>     MR<register_number>.<bit_number>
-\`\`\`
+| Prefix | Meaning | Example use |
+|---------|-----------|-------------|
+| **TV**n | Timer elapsed (ms) word | \`MOVE TV0 → R20\` |
+| **T**n | Timer done bit (Q) | contact on \`T0\` |
+| **CV**n | Counter current value | \`MOVE CV0 → R21\` |
+| **C**n | Counter done bit (Q) | contact on \`C0\` |
 
-- Bit number: **0–15** (16-bit word)
-- Example: \`R1.0\` = bit 0 of register R1, \`MR2.15\` = bit 15 of internal register MR2
-
-## Simulator memory mapping
-
-| Prefix | Memory area | On Modbus? |
-|---------|----------------|-----------|
-| I | Discrete Inputs (1x) | yes |
-| Q | Coils (0x) | yes |
-| R | Holding (4x) — word or \`.x\` bit | yes |
-| **M** | Internal marker bits | **no — app only** |
-| **MR** | Internal memory registers | **no — app only** |
-
-Use **M** / **MR** for internal working memory (interlocks, sequence steps, scratch
-math) that must never be readable or writable from an external Modbus master.
-
-## Ladder elements
-
-- **Contacts / coils** — usually **I**, **Q**, **M**, **R.n.x**
-- **P edge (rising)** — one-scan pulse on 0→1
-- **N edge (falling)** — one-scan pulse on 1→0
-- **SET (S)** — sets a bit to 1 and holds it until RESET
-- **RESET (R)** — clears a bit to 0
-- **TON / CTU / Math** — **R**/**MR** registers (words), done outputs on **Q** or **M**
-- **MOVE / CMP** — **R** / **MR** word operands
-
-## Examples
-
-| Syntax | Description |
-|-------|------|
-| \`I0\` | Start on input 0 |
-| \`Q0\` | Output coil 0 |
-| \`M5\` | Internal marker bit 5 (interlock/step) |
-| \`MR20\` | Internal register 20 (setpoint, never on Modbus) |
-| \`R20\` | MW20 holding word (Modbus setpoint) |
-| \`R1.7\` | Bit 7 in holding register 1 |
+These map to engine banks (R2048+ for T, R3072+ for C) and always appear live on FB blocks.
 
 ## Tips
 
-1. Click a ladder element to open this window.
-2. Choose a prefix (I/Q/M/MR/R), number, and optional bit.
-3. You can also type an address manually in the **Quick address** field (e.g. \`MR1.3\`).
-4. **Apply** saves the element and updates the program (Compile & Load recommended).
+1. On TON/CTU blocks, **ET/CV** update while RUN.
+2. To copy a timer into a register: add **MOVE**, source \`TV0\`, dest \`R10\`.
+3. Alias: **MW**n → **R**n.
 `.trim();

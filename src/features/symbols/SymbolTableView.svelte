@@ -19,7 +19,7 @@
       case "coil":
         return `Q${index}`;
       case "holding":
-        return `MW${index}`;
+        return `R${index}`;
       case "input_reg":
         return `IW${index}`;
       case "memory_bit":
@@ -76,7 +76,7 @@
   <div class="tia-page-header">
     <div>
       <h1>PLC tags</h1>
-      <p>Define named bits and registers (I / Q / MW / IW) used in ladder and Modbus export.</p>
+      <p>Named bits and registers: I / Q / M / R / MR / IW (canonical R = holding; MW alias accepted in ladder).</p>
     </div>
     <div class="tia-actions">
       <button type="button" class="tia-btn" onclick={addRow}>+ Tag</button>
@@ -122,10 +122,10 @@
               >
                 <option value="discrete">I (Input)</option>
                 <option value="coil">Q (Output)</option>
-                <option value="holding">MW (Memory)</option>
-                <option value="input_reg">IW (Input word)</option>
-                <option value="memory_bit">M (Marker · internal)</option>
-                <option value="memory_word">MR (Register · internal)</option>
+                <option value="holding">R (Holding)</option>
+                <option value="input_reg">IW (Input register)</option>
+                <option value="memory_bit">M (Marker)</option>
+                <option value="memory_word">MR (Internal register)</option>
               </select>
             </td>
             <td>

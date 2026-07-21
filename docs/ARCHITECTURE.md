@@ -25,11 +25,20 @@
 │  └──────────┘    └──────────────┘    └───────┬───────┘  │
 │                                              │          │
 │                                    ┌─────────▼────────┐ │
+│                                    │ Mapping Engine   │ │
+│                                    │ Direct/Bit↔Word  │ │
+│                                    │ WriteProtect     │ │
+│                                    └─────────┬────────┘ │
+│                                    ┌─────────▼────────┐ │
 │                                    │ Modbus TCP :5020 │ │
 │                                    └──────────────────┘ │
 │  AuditTrail (hash chain) ← operator / system actions    │
 └─────────────────────────────────────────────────────────┘
 ```
+
+Modbus exposure is driven by the **Translation Matrix** (`plc/modbus_map.rs`):
+Direct, BitToRegister, and RegisterToBit rules with per-rule write protection
+and Strict/SilentDrop deny modes. See [MODBUS.md](MODBUS.md).
 
 ## Frontend layout
 
@@ -116,14 +125,16 @@ refinement:
 - **Discrete inputs (I) and input registers (IW)** are captured **once** into a
   frozen process-image at the start of every scan (`ScanInputImage::capture`).
   All contact reads within the scan see this stable snapshot.
-- **Coils (Q) and holding markers (M/R)** are read **live** during rung
-  evaluation. This is intentional: it lets an output referenced later in the same
-  scan (e.g. an OR **seal-in** of `Q0`) reflect the value just written, which is
-  the behaviour operators expect from a teaching simulator. It is a conscious
-  divergence from controllers that snapshot the *entire* image; it is safe here
-  because outputs are single-writer within a scan.
-- `PlcMemory::snapshot()` takes all four process-image locks together, so the
-  image exposed to the UI / Modbus is **coherent** across areas.
+- **Coils (Q), markers (M), holding (R), and internal registers (MR)** are read
+  **live** during rung evaluation. This is intentional: it lets an output
+  referenced later in the same scan (e.g. an OR **seal-in** of `Q0`) reflect the
+  value just written. It is a conscious divergence from controllers that snapshot
+  the *entire* image; it is safe here because outputs are single-writer within a scan.
+- Process image areas: **I, Q, M, R, MR, IW** (six banks). Timer/counter status is
+  published into holding at **R2048+** (T) and **R3072+** (C), disjoint from user R.
+- `PlcMemory::snapshot()` takes all process-image locks together so the image
+  exposed to the UI / Modbus is **coherent** across areas. Live UI uses
+  `snapshot_ui()` (256 bits / 128 words / 32 IR) shared by the scan loop and IPC.
 
 ## Quality notes
 

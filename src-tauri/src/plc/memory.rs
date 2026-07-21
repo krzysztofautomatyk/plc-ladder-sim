@@ -13,10 +13,27 @@ pub const COIL_COUNT: usize = 4096;
 pub const DISCRETE_INPUT_COUNT: usize = 4096;
 pub const HOLDING_REGISTER_COUNT: usize = 4096;
 pub const INPUT_REGISTER_COUNT: usize = 1024;
-/// Internal marker bits (M) — ladder-only, never exposed on Modbus.
+/// Internal marker bits (M) — not on Modbus identity fallback; explicit map only.
 pub const MEMORY_BIT_COUNT: usize = 4096;
-/// Internal memory registers (MR) — ladder-only, never exposed on Modbus.
+/// Internal memory registers (MR) — not on Modbus identity fallback; explicit map only.
 pub const MEMORY_WORD_COUNT: usize = 4096;
+
+/// Compact snapshot sizes used by live UI events and `get_memory_snapshot(compact)`.
+/// Must cover demo R40–R42, watch panel, Memory view (first 64), and default I/Q alloc (128).
+pub const COMPACT_BIT_COUNT: usize = 256;
+pub const COMPACT_WORD_COUNT: usize = 128;
+/// Input registers in compact snapshots (diagnostics IR0–5 + headroom).
+pub const COMPACT_INPUT_REG_COUNT: usize = 32;
+
+/// Holding base for timer ET/Q pairs: `HR[TIMER_HR_BASE + 2*n] = ET`, `+1 = Q`.
+/// Placed above the default user R allocation (data16=1024) so T does not stomp R0…
+pub const TIMER_HR_BASE: u16 = 2048;
+/// Holding base for counter CV/Q pairs: `HR[COUNTER_HR_BASE + 2*n] = CV`, `+1 = Q`.
+/// Disjoint from the timer bank (max T/C index 255 → 512 words each).
+pub const COUNTER_HR_BASE: u16 = 3072;
+/// Max timer/counter instance indices (matches memconfig TIMER_MAX / COUNTER_MAX).
+pub const TIMER_INSTANCE_COUNT: usize = 256;
+pub const COUNTER_INSTANCE_COUNT: usize = 256;
 
 /// Runtime status exposed to UI / Modbus diagnostic registers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,6 +56,18 @@ pub struct MemorySnapshot {
     pub memory_bits: Vec<bool>,
     #[serde(default)]
     pub memory_words: Vec<u16>,
+    /// Timer elapsed time (ms) per instance index — always full bank in UI snapshots.
+    #[serde(default)]
+    pub timer_et: Vec<u16>,
+    /// Timer done bits (Q) per instance.
+    #[serde(default)]
+    pub timer_q: Vec<bool>,
+    /// Counter current values per instance.
+    #[serde(default)]
+    pub counter_cv: Vec<u16>,
+    /// Counter done bits (Q) per instance.
+    #[serde(default)]
+    pub counter_q: Vec<bool>,
     pub run_state: PlcRunState,
     pub scan_count: u64,
     pub last_scan_us: u64,
@@ -60,14 +89,20 @@ pub struct PlcMemory {
     coils: parking_lot::RwLock<Vec<bool>>,
     /// Discrete inputs (Modbus FC 02) — I bits.
     discrete_inputs: parking_lot::RwLock<Vec<bool>>,
-    /// Holding registers (Modbus FC 03 / 06 / 16) — MW / timers / counters.
+    /// Holding registers (Modbus FC 03 / 06 / 16) — R data + T/C status banks.
     holding_registers: parking_lot::RwLock<Vec<u16>>,
     /// Input registers (Modbus FC 04) — diagnostics / scan metrics.
     input_registers: parking_lot::RwLock<Vec<u16>>,
-    /// Internal marker bits (M) — ladder-only working memory, never on Modbus.
+    /// Internal marker bits (M) — ladder; Modbus only via explicit matrix rule.
     memory_bits: parking_lot::RwLock<Vec<bool>>,
-    /// Internal memory registers (MR) — ladder-only working memory, never on Modbus.
+    /// Internal memory registers (MR) — ladder; Modbus only via explicit matrix rule.
     memory_words: parking_lot::RwLock<Vec<u16>>,
+    /// Live timer image (always published to UI; also mirrored to holding bank).
+    timer_et: parking_lot::RwLock<Vec<u16>>,
+    timer_q: parking_lot::RwLock<Vec<bool>>,
+    /// Live counter image (always published to UI; also mirrored to holding bank).
+    counter_cv: parking_lot::RwLock<Vec<u16>>,
+    counter_q: parking_lot::RwLock<Vec<bool>>,
 
     run_state: parking_lot::RwLock<PlcRunState>,
     scan_count: AtomicU64,
@@ -97,6 +132,10 @@ impl PlcMemory {
             input_registers: parking_lot::RwLock::new(vec![0u16; INPUT_REGISTER_COUNT]),
             memory_bits: parking_lot::RwLock::new(vec![false; MEMORY_BIT_COUNT]),
             memory_words: parking_lot::RwLock::new(vec![0u16; MEMORY_WORD_COUNT]),
+            timer_et: parking_lot::RwLock::new(vec![0u16; TIMER_INSTANCE_COUNT]),
+            timer_q: parking_lot::RwLock::new(vec![false; TIMER_INSTANCE_COUNT]),
+            counter_cv: parking_lot::RwLock::new(vec![0u16; COUNTER_INSTANCE_COUNT]),
+            counter_q: parking_lot::RwLock::new(vec![false; COUNTER_INSTANCE_COUNT]),
             run_state: parking_lot::RwLock::new(PlcRunState::Stop),
             scan_count: AtomicU64::new(0),
             last_scan_us: AtomicU64::new(0),
@@ -207,7 +246,7 @@ impl PlcMemory {
     }
 
     // -------------------------------------------------------------------------
-    // Internal memory bits (M) — ladder-only, never on Modbus
+    // Internal memory bits (M)
     // -------------------------------------------------------------------------
 
     pub fn get_memory_bit(&self, addr: u16) -> Result<bool, MemoryError> {
@@ -231,7 +270,7 @@ impl PlcMemory {
     }
 
     // -------------------------------------------------------------------------
-    // Internal memory registers (MR) — ladder-only, never on Modbus
+    // Internal memory registers (MR)
     // -------------------------------------------------------------------------
 
     pub fn get_memory_word(&self, addr: u16) -> Result<u16, MemoryError> {
@@ -251,6 +290,62 @@ impl PlcMemory {
             addr,
         })?;
         *slot = value;
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // Timer / counter live image (UI + holding mirror for Modbus/TV/CV)
+    // -------------------------------------------------------------------------
+
+    /// Publish timer ET/Q into the dedicated UI image and the holding bank.
+    pub fn set_timer_image(&self, index: u16, et: u16, q: bool) -> Result<(), MemoryError> {
+        {
+            let mut et_v = self.timer_et.write();
+            let slot = et_v
+                .get_mut(index as usize)
+                .ok_or(MemoryError::OutOfRange {
+                    area: "timer",
+                    addr: index,
+                })?;
+            *slot = et;
+        }
+        {
+            let mut q_v = self.timer_q.write();
+            let slot = q_v.get_mut(index as usize).ok_or(MemoryError::OutOfRange {
+                area: "timer_q",
+                addr: index,
+            })?;
+            *slot = q;
+        }
+        let base = TIMER_HR_BASE.saturating_add(index.saturating_mul(2));
+        self.set_holding(base, et)?;
+        self.set_holding(base.saturating_add(1), if q { 1 } else { 0 })?;
+        Ok(())
+    }
+
+    /// Publish counter CV/Q into the dedicated UI image and the holding bank.
+    pub fn set_counter_image(&self, index: u16, cv: u16, q: bool) -> Result<(), MemoryError> {
+        {
+            let mut cv_v = self.counter_cv.write();
+            let slot = cv_v
+                .get_mut(index as usize)
+                .ok_or(MemoryError::OutOfRange {
+                    area: "counter",
+                    addr: index,
+                })?;
+            *slot = cv;
+        }
+        {
+            let mut q_v = self.counter_q.write();
+            let slot = q_v.get_mut(index as usize).ok_or(MemoryError::OutOfRange {
+                area: "counter_q",
+                addr: index,
+            })?;
+            *slot = q;
+        }
+        let base = COUNTER_HR_BASE.saturating_add(index.saturating_mul(2));
+        self.set_holding(base, cv)?;
+        self.set_holding(base.saturating_add(1), if q { 1 } else { 0 })?;
         Ok(())
     }
 
@@ -364,6 +459,22 @@ impl PlcMemory {
             let mut m = self.memory_words.write();
             m.fill(0);
         }
+        {
+            let mut t = self.timer_et.write();
+            t.fill(0);
+        }
+        {
+            let mut t = self.timer_q.write();
+            t.fill(false);
+        }
+        {
+            let mut c = self.counter_cv.write();
+            c.fill(0);
+        }
+        {
+            let mut c = self.counter_q.write();
+            c.fill(false);
+        }
         self.scan_count.store(0, Ordering::Relaxed);
         self.last_scan_us.store(0, Ordering::Relaxed);
         self.clear_fault();
@@ -384,6 +495,10 @@ impl PlcMemory {
         let input_registers = self.input_registers.read();
         let memory_bits = self.memory_bits.read();
         let memory_words = self.memory_words.read();
+        let timer_et = self.timer_et.read();
+        let timer_q = self.timer_q.read();
+        let counter_cv = self.counter_cv.read();
+        let counter_q = self.counter_q.read();
         MemorySnapshot {
             coils: coils.clone(),
             discrete_inputs: discrete_inputs.clone(),
@@ -391,6 +506,10 @@ impl PlcMemory {
             input_registers: input_registers.clone(),
             memory_bits: memory_bits.clone(),
             memory_words: memory_words.clone(),
+            timer_et: timer_et.clone(),
+            timer_q: timer_q.clone(),
+            counter_cv: counter_cv.clone(),
+            counter_q: counter_q.clone(),
             run_state: self.run_state(),
             scan_count: self.scan_count(),
             last_scan_us: self.last_scan_us(),
@@ -403,21 +522,33 @@ impl PlcMemory {
     }
 
     /// Compact snapshot for high-frequency UI updates (first N of each area).
-    pub fn snapshot_compact(&self, coil_n: usize, reg_n: usize) -> MemorySnapshot {
+    /// Prefer [`Self::snapshot_ui`] so engine and IPC stay in lockstep.
+    /// Timer/counter images are always sent in full (small fixed banks).
+    pub fn snapshot_compact(&self, bit_n: usize, reg_n: usize) -> MemorySnapshot {
         let full = self.snapshot();
         MemorySnapshot {
-            coils: full.coils.into_iter().take(coil_n).collect(),
-            discrete_inputs: full.discrete_inputs.into_iter().take(coil_n).collect(),
+            coils: full.coils.into_iter().take(bit_n).collect(),
+            discrete_inputs: full.discrete_inputs.into_iter().take(bit_n).collect(),
             holding_registers: full.holding_registers.into_iter().take(reg_n).collect(),
             input_registers: full
                 .input_registers
                 .into_iter()
-                .take(reg_n.min(16))
+                .take(COMPACT_INPUT_REG_COUNT)
                 .collect(),
-            memory_bits: full.memory_bits.into_iter().take(coil_n).collect(),
+            memory_bits: full.memory_bits.into_iter().take(bit_n).collect(),
             memory_words: full.memory_words.into_iter().take(reg_n).collect(),
+            // Always full T/C image so online FB glyphs see ET/CV.
+            timer_et: full.timer_et,
+            timer_q: full.timer_q,
+            counter_cv: full.counter_cv,
+            counter_q: full.counter_q,
             ..full
         }
+    }
+
+    /// Canonical compact image for live UI (engine events + IPC).
+    pub fn snapshot_ui(&self) -> MemorySnapshot {
+        self.snapshot_compact(COMPACT_BIT_COUNT, COMPACT_WORD_COUNT)
     }
 }
 
@@ -437,6 +568,28 @@ mod tests {
         m.set_coil(10, true).unwrap();
         assert!(m.get_coil(10).unwrap());
         assert!(!m.get_coil(11).unwrap());
+    }
+
+    #[test]
+    fn timer_image_appears_in_ui_snapshot() {
+        let m = PlcMemory::new();
+        m.set_timer_image(3, 450, true).unwrap();
+        let snap = m.snapshot_ui();
+        assert_eq!(snap.timer_et[3], 450);
+        assert!(snap.timer_q[3]);
+        // Holding bank mirror for MOVE TV3 → R…
+        assert_eq!(m.get_holding(TIMER_HR_BASE + 6).unwrap(), 450);
+        assert_eq!(m.get_holding(TIMER_HR_BASE + 7).unwrap(), 1);
+    }
+
+    #[test]
+    fn counter_image_appears_in_ui_snapshot() {
+        let m = PlcMemory::new();
+        m.set_counter_image(2, 7, false).unwrap();
+        let snap = m.snapshot_ui();
+        assert_eq!(snap.counter_cv[2], 7);
+        assert!(!snap.counter_q[2]);
+        assert_eq!(m.get_holding(COUNTER_HR_BASE + 4).unwrap(), 7);
     }
 
     #[test]

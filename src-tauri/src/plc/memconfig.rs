@@ -27,14 +27,15 @@ pub struct MemoryConfig {
     pub inputs: u16,
     /// Coils / outputs Q0..Q(n-1).
     pub outputs: u16,
-    /// Internal marker bits M0..M(n-1) — never on Modbus.
+    /// Internal marker bits M0..M(n-1) — Modbus only via explicit matrix rule.
     pub markers: u16,
-    /// 16-bit data registers R0..R(n-1) — Modbus holding (4x).
+    /// 16-bit data registers R0..R(n-1) — Modbus holding (4x). User data;
+    /// engine publishes T/C status at R2048+ / R3072+ (outside default data16).
     pub data16: u16,
-    /// 32-bit data registers RD0..RD(n-1) — overlay the top of the R pool as
-    /// consecutive word pairs (each RD uses two 16-bit registers).
+    /// Reserved pool for future 32-bit RD (2 words each above data16). Not yet
+    /// ladder-addressable as RD prefix.
     pub data32: u16,
-    /// 16-bit internal registers MR0..MR(n-1) — never on Modbus.
+    /// 16-bit internal registers MR0..MR(n-1) — Modbus only via explicit matrix rule.
     pub internal16: u16,
     /// Timer instances T0..T(n-1).
     pub timers: u16,

@@ -28,7 +28,7 @@ pub struct PlcSymbol {
     pub data_type: DataType,
     #[serde(default)]
     pub comment: String,
-    /// Absolute address display e.g. I0.0 / Q0.0 / MW10 (UI helper)
+    /// Absolute address display e.g. I0 / Q0 / R10 / M5 (UI helper)
     #[serde(default)]
     pub address_display: String,
 }
@@ -150,15 +150,15 @@ fn default_symbols() -> Vec<PlcSymbol> {
             "Compare result",
         ),
         sym(
-            "s_mw0",
+            "s_r2048",
             "Timer_ET",
             MemArea::Holding,
-            0,
+            2048, // TIMER_HR_BASE + T0*2
             DataType::Word,
-            "Timer elapsed (ms)",
+            "Timer T0 elapsed (ms) — engine bank R2048+",
         ),
         sym(
-            "s_mw40",
+            "s_r40",
             "Setpoint",
             MemArea::Holding,
             40,
@@ -166,7 +166,7 @@ fn default_symbols() -> Vec<PlcSymbol> {
             "Compare A",
         ),
         sym(
-            "s_mw41",
+            "s_r41",
             "Actual",
             MemArea::Holding,
             41,
@@ -174,7 +174,7 @@ fn default_symbols() -> Vec<PlcSymbol> {
             "Compare B",
         ),
         sym(
-            "s_mw42",
+            "s_r42",
             "Result",
             MemArea::Holding,
             42,
@@ -195,7 +195,7 @@ fn sym(
     let address_display = match area {
         MemArea::Discrete => format!("I{}", index),
         MemArea::Coil => format!("Q{}", index),
-        MemArea::Holding => format!("MW{}", index),
+        MemArea::Holding => format!("R{}", index),
         MemArea::InputReg => format!("IW{}", index),
         MemArea::MemoryBit => format!("M{}", index),
         MemArea::MemoryWord => format!("MR{}", index),

@@ -173,8 +173,8 @@ pub fn get_memory_snapshot(
     compact: Option<bool>,
 ) -> CommandResult<MemorySnapshot> {
     let snap = if compact.unwrap_or(true) {
-        // Include MW40+ used by demo compare/move and timer/counter pairs
-        state.memory.snapshot_compact(128, 64)
+        // Same compact image as scan events — R40–R42, I/Q/M head, diagnostics IR
+        state.memory.snapshot_ui()
     } else {
         state.memory.snapshot()
     };
@@ -367,7 +367,7 @@ pub fn reset_memory(state: State<'_, AppState>) -> CommandResult<MemorySnapshot>
         "process image cleared",
         state.memory.program_hash(),
     );
-    CommandResult::ok(state.memory.snapshot_compact(128, 64))
+    CommandResult::ok(state.memory.snapshot_ui())
 }
 
 /// Export audit report JSON.
@@ -540,11 +540,14 @@ pub fn set_modbus_map(
     map: ModbusMapSnapshot,
 ) -> CommandResult<ModbusMapSnapshot> {
     let n = map.entries.len();
-    state.modbus.map().set_all(map);
+    let mode = map.write_protect_mode;
+    if let Err(e) = state.modbus.map().set_all(map) {
+        return CommandResult::err(e);
+    }
     state.audit.record(
         "operator",
         "MODBUS_SET_MAP",
-        format!("entries={n}"),
+        format!("entries={n} write_protect_mode={mode:?}"),
         state.memory.program_hash(),
     );
     CommandResult::ok(state.modbus.map().snapshot())

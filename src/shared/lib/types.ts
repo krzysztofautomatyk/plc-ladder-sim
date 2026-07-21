@@ -11,6 +11,10 @@ export type CmpOp = "eq" | "ne" | "gt" | "ge" | "lt" | "le";
 export type MathOp = "add" | "sub" | "mul" | "div";
 export type DataType = "bool" | "word" | "int" | "d_int";
 export type ModbusTable = "coil" | "discrete" | "holding" | "input_reg";
+/** How a Modbus matrix rule translates PLC ↔ Modbus. */
+export type MappingType = "direct" | "bit_to_register" | "register_to_bit";
+/** Per-rule write-protect deny behaviour (global SCADA write enable still required). */
+export type WriteProtectMode = "strict" | "silent_drop";
 
 export interface Address {
   area: MemArea;
@@ -113,6 +117,14 @@ export interface MemorySnapshot {
   input_registers: number[];
   memory_bits: boolean[];
   memory_words: number[];
+  /** Timer ET (ms) by instance — always full bank in live snapshots. */
+  timer_et?: number[];
+  /** Timer done Q by instance. */
+  timer_q?: boolean[];
+  /** Counter CV by instance. */
+  counter_cv?: number[];
+  /** Counter done Q by instance. */
+  counter_q?: boolean[];
   run_state: PlcRunState;
   scan_count: number;
   last_scan_us: number;
@@ -209,17 +221,29 @@ export interface ModbusStatus {
 export interface ModbusMapEntry {
   id: string;
   enabled: boolean;
+  /** Default: direct (1:1). */
+  mapping_type?: MappingType;
   symbol_name: string;
   plc_area: MemArea;
-  plc_index: number;
+  /** PLC start index (serde alias of legacy plc_index). */
+  plc_start: number;
+  /** Bit offset 0–15 inside a word (RegisterToBit). */
+  plc_bit_offset?: number;
   modbus_table: ModbusTable;
-  modbus_address: number;
+  /** First Modbus address (serde alias of legacy modbus_address). */
+  modbus_start: number;
+  /** Span on Modbus side (Direct ≥1; BitToRegister 1; RegisterToBit 16). */
+  length?: number;
+  /** When true, Modbus writes targeting this rule are denied. */
+  is_write_protected?: boolean;
   comment: string;
 }
 
 export interface ModbusMapSnapshot {
   entries: ModbusMapEntry[];
   identity_fallback: boolean;
+  /** Strict exception vs silent ACK when a rule is write-protected. */
+  write_protect_mode?: WriteProtectMode;
 }
 
 export interface LogEntry {

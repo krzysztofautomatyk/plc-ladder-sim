@@ -1,12 +1,13 @@
 <script lang="ts">
   /**
    * Function-block glyph for timers, counters, math, move and compare —
-   * a compact instruction box with a mnemonic header, parameter rows
-   * (label · value) and left/right power stubs so it sits on the rung.
+   * compact instruction box with parameter rows and power stubs.
    */
   interface Row {
     k: string;
     v: string;
+    /** Highlight live process-image values (ET/CV/Q during RUN). */
+    live?: boolean;
   }
   interface Props {
     title: string;
@@ -26,7 +27,7 @@
     </div>
     <div class="fb-b">
       {#each rows as r}
-        <div class="fb-row">
+        <div class="fb-row" class:live={r.live}>
           <span class="k">{r.k}</span>
           <span class="v">{r.v}</span>
         </div>
@@ -51,7 +52,7 @@
     background: #00a651;
   }
   .fb {
-    min-width: 96px;
+    min-width: 118px;
     border: 1.5px solid #1a1a1a;
     background: #fff;
     border-radius: 2px;
@@ -108,8 +109,19 @@
     color: #003d5c;
     font-weight: 700;
   }
+  .fb-row.live .v {
+    color: #0b5cab;
+    background: #e8f4fc;
+    padding: 0 3px;
+    border-radius: 2px;
+    min-width: 2.2em;
+    text-align: right;
+  }
   .fb-wrap.hot .fb-row .v {
     color: #006633;
   }
+  .fb-wrap.hot .fb-row.live .v {
+    color: #0a6b38;
+    background: #e6f7ed;
+  }
 </style>
-

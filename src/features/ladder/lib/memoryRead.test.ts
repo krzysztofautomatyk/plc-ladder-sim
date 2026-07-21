@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { readMemoryBit, elementAddress } from "./memoryRead";
+import {
+  readMemoryBit,
+  readMemoryValue,
+  formatLiveOperand,
+  elementAddress,
+} from "./memoryRead";
 import type { MemorySnapshot } from "../../../shared/lib/types";
 
 function mem(partial: Partial<MemorySnapshot>): MemorySnapshot {
@@ -10,6 +15,10 @@ function mem(partial: Partial<MemorySnapshot>): MemorySnapshot {
     input_registers: [],
     memory_bits: [],
     memory_words: [],
+    timer_et: [],
+    timer_q: [],
+    counter_cv: [],
+    counter_q: [],
     run_state: "stop",
     scan_count: 0,
     last_scan_us: 0,
@@ -53,6 +62,23 @@ describe("readMemoryBit", () => {
   });
 });
 
+describe("readMemoryValue / formatLiveOperand", () => {
+  it("reads holding words for MOVE-style display", () => {
+    const m = mem({ holding_registers: Array(50).fill(0).map((_, i) => (i === 40 ? 1234 : 0)) });
+    expect(readMemoryValue(m, { area: "holding", index: 40 })).toBe(1234);
+    expect(formatLiveOperand(m, { area: "holding", index: 40 }, (a) => `R${a!.index}`)).toBe(
+      "R40=1234"
+    );
+  });
+
+  it("reads timer ET from dedicated image", () => {
+    const et = Array(16).fill(0);
+    et[0] = 850;
+    const m = mem({ timer_et: et });
+    expect(readMemoryValue(m, { area: "holding", index: 2048 })).toBe(850);
+  });
+});
+
 describe("elementAddress", () => {
   it("returns the address when present", () => {
     expect(elementAddress({ address: { area: "coil", index: 1 } })).toEqual({
@@ -65,3 +91,4 @@ describe("elementAddress", () => {
     expect(elementAddress({ type: "wire" })).toBeNull();
   });
 });
+

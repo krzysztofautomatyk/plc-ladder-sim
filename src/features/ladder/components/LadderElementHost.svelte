@@ -145,8 +145,8 @@
     outline: 2px solid #0078a8;
   }
   .cell.fb {
-    width: 116px;
-    height: 108px;
+    width: 136px;
+    height: 122px;
   }
   .cell.coil {
     width: 64px;

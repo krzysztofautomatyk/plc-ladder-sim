@@ -70,7 +70,17 @@ function mockInvoke<T>(cmd: string, _args?: Record<string, unknown>): CommandRes
     return { ok: true, data: { symbols: [] } as T };
   }
   if (cmd === "get_modbus_map") {
-    return { ok: true, data: { entries: [], identity_fallback: true } as T };
+    return {
+      ok: true,
+      data: {
+        entries: [],
+        identity_fallback: true,
+        write_protect_mode: "strict",
+      } as T,
+    };
+  }
+  if (cmd === "set_modbus_map") {
+    return { ok: true, data: (_args?.map ?? { entries: [], identity_fallback: true, write_protect_mode: "strict" }) as T };
   }
   if (cmd === "get_logs") {
     return { ok: true, data: [] as T };
@@ -88,12 +98,16 @@ function mockInvoke<T>(cmd: string, _args?: Record<string, unknown>): CommandRes
     return {
       ok: true,
       data: {
-        coils: Array(64).fill(false),
-        discrete_inputs: Array(64).fill(false),
-        holding_registers: Array(64).fill(0),
-        input_registers: Array(16).fill(0),
-        memory_bits: Array(64).fill(false),
-        memory_words: Array(64).fill(0),
+        coils: Array(256).fill(false),
+        discrete_inputs: Array(256).fill(false),
+        holding_registers: Array(128).fill(0),
+        input_registers: Array(32).fill(0),
+        memory_bits: Array(256).fill(false),
+        memory_words: Array(128).fill(0),
+        timer_et: Array(256).fill(0),
+        timer_q: Array(256).fill(false),
+        counter_cv: Array(256).fill(0),
+        counter_q: Array(256).fill(false),
         run_state: "stop",
         scan_count: 0,
         last_scan_us: 0,

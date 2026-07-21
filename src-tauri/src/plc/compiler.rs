@@ -16,9 +16,9 @@ pub enum MemArea {
     Discrete,
     Holding,
     InputReg,
-    /// Internal marker bit (M) — usable in ladder logic only, never on Modbus.
+    /// Internal marker bit (M) — ladder; Modbus only via explicit matrix rule.
     MemoryBit,
-    /// Internal memory register (MR) — usable in ladder logic only, never on Modbus.
+    /// Internal memory register (MR) — ladder; Modbus only via explicit matrix rule.
     MemoryWord,
 }
 
@@ -759,8 +759,8 @@ pub fn demo_program() -> LadderProgram {
             },
             Rung {
                 id: "rung_3".into(),
-                // Use MW40+ to avoid collision with timer/counter HR pairs (index*2)
-                comment: "If MW40 >= MW41 then MOVE MW40→MW42 and Q3".into(),
+                // R40+ user data (T/C status lives at R2048+ / R3072+)
+                comment: "If R40 >= R41 then MOVE R40→R42 and Q3".into(),
                 enabled: true,
                 or_branches: vec![],
                 elements: vec![

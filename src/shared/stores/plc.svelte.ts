@@ -31,13 +31,18 @@ import type {
 } from "../lib/types";
 
 function emptyMemory(): MemorySnapshot {
+  // Match backend COMPACT_* sizes so watch/demo R40 are always in range before first poll.
   return {
-    coils: Array(64).fill(false),
-    discrete_inputs: Array(64).fill(false),
-    holding_registers: Array(64).fill(0),
-    input_registers: Array(16).fill(0),
-    memory_bits: Array(64).fill(false),
-    memory_words: Array(64).fill(0),
+    coils: Array(256).fill(false),
+    discrete_inputs: Array(256).fill(false),
+    holding_registers: Array(128).fill(0),
+    input_registers: Array(32).fill(0),
+    memory_bits: Array(256).fill(false),
+    memory_words: Array(128).fill(0),
+    timer_et: Array(256).fill(0),
+    timer_q: Array(256).fill(false),
+    counter_cv: Array(256).fill(0),
+    counter_q: Array(256).fill(false),
     run_state: "stop",
     scan_count: 0,
     last_scan_us: 0,
@@ -85,7 +90,11 @@ class PlcStore {
     write_enabled: false,
     last_error: "",
   });
-  modbusMap = $state<ModbusMapSnapshot>({ entries: [], identity_fallback: true });
+  modbusMap = $state<ModbusMapSnapshot>({
+    entries: [],
+    identity_fallback: true,
+    write_protect_mode: "strict",
+  });
   logs = $state<LogEntry[]>([]);
   memoryConfig = $state<MemoryConfig>({
     inputs: 128,
@@ -361,14 +370,15 @@ class PlcStore {
     }
   }
 
-  async saveModbusMap(map: ModbusMapSnapshot) {
+  async saveModbusMap(map: ModbusMapSnapshot): Promise<string | null> {
     const res = await api.setModbusMap(map);
     if (res.ok && res.data) {
       this.modbusMap = res.data;
       this.message = `Modbus map saved (${res.data.entries.length} entries)`;
-    } else {
-      this.message = res.error ?? "save map failed";
+      return null;
     }
+    this.message = res.error ?? "save map failed";
+    return res.error ?? "save map failed";
   }
 
   async loadDemo() {

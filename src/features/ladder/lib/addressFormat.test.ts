@@ -18,9 +18,10 @@ describe("formatAddress", () => {
     expect(formatAddress({ area: "memory_word", index: 2, bit: 3 })).toBe("MR2.3");
   });
 
-  it("includes the bit when present", () => {
-    expect(formatAddress({ area: "discrete", index: 5, bit: 2 })).toBe("I5.2");
+  it("includes the bit only for word areas", () => {
     expect(formatAddress({ area: "holding", index: 1, bit: 3 })).toBe("R1.3");
+    // Pure bit areas never render .bit (bit field ignored if present)
+    expect(formatAddress({ area: "discrete", index: 5, bit: 2 })).toBe("I5");
   });
 
   it("renders a placeholder for missing addresses", () => {
@@ -36,6 +37,7 @@ describe("prefix / area mapping", () => {
     expect(prefixToArea("M")).toBe("memory_bit");
     expect(prefixToArea("MR")).toBe("memory_word");
     expect(prefixToArea("R")).toBe("holding");
+    expect(prefixToArea("IW")).toBe("input_reg");
   });
 
   it("maps areas back to prefixes", () => {
@@ -44,6 +46,7 @@ describe("prefix / area mapping", () => {
     expect(areaToPrefix("memory_bit", false)).toBe("M");
     expect(areaToPrefix("memory_word", true)).toBe("MR");
     expect(areaToPrefix("holding", false)).toBe("R");
+    expect(areaToPrefix("input_reg", false)).toBe("IW");
   });
 });
 
@@ -57,10 +60,17 @@ describe("parseVarString", () => {
     expect(q3?.address).toEqual({ area: "coil", index: 3 });
   });
 
-  it("accepts the %-prefixed IEC form and explicit bit", () => {
-    const parsed = parseVarString("%I0.0");
+  it("accepts the %-prefixed IEC form without bit for pure bit areas", () => {
+    const parsed = parseVarString("%I0");
     expect(parsed?.address.area).toBe("discrete");
-    expect(parsed?.address.bit).toBe(0);
+    expect(parsed?.address.index).toBe(0);
+    expect(parsed?.address.bit).toBeUndefined();
+  });
+
+  it("rejects .bit on I/Q/M (no packed-byte addressing)", () => {
+    expect(parseVarString("I0.0")).toBeNull();
+    expect(parseVarString("Q1.3")).toBeNull();
+    expect(parseVarString("M5.1")).toBeNull();
   });
 
   it("parses register bit syntax R1.5", () => {
@@ -69,13 +79,38 @@ describe("parseVarString", () => {
     expect(r?.display).toBe("R1.5");
   });
 
-  it("normalises MW/IW aliases to R words", () => {
+  it("normalises MW alias to R words", () => {
     const mw = parseVarString("MW20");
     expect(mw?.address).toEqual({ area: "holding", index: 20 });
     expect(mw?.display).toBe("R20");
   });
 
-  it("treats a bare M marker as an internal marker bit (never Modbus)", () => {
+  it("parses IW as input_reg (not holding)", () => {
+    const iw = parseVarString("IW4");
+    expect(iw?.address).toEqual({ area: "input_reg", index: 4 });
+    expect(iw?.display).toBe("IW4");
+    expect(iw?.prefix).toBe("IW");
+  });
+
+  it("maps TV/CV/T/C onto holding banks for MOVE", () => {
+    const tv = parseVarString("TV0");
+    expect(tv?.address).toEqual({ area: "holding", index: 2048 });
+    expect(tv?.display).toBe("TV0");
+
+    const t = parseVarString("T0");
+    expect(t?.address).toEqual({ area: "holding", index: 2049 });
+    expect(t?.display).toBe("T0");
+
+    const cv = parseVarString("CV1");
+    expect(cv?.address).toEqual({ area: "holding", index: 3072 + 2 });
+    expect(cv?.display).toBe("CV1");
+
+    const c = parseVarString("C1");
+    expect(c?.address).toEqual({ area: "holding", index: 3072 + 2 + 1 });
+    expect(c?.display).toBe("C1");
+  });
+
+  it("parses internal marker bits M", () => {
     const m = parseVarString("M5");
     expect(m?.address).toEqual({ area: "memory_bit", index: 5 });
     expect(m?.display).toBe("M5");
@@ -139,6 +174,13 @@ describe("formToAddress", () => {
     expect(formToAddress("MR", 3, null, false)).toEqual({
       area: "memory_word",
       index: 3,
+    });
+  });
+
+  it("builds IW input registers", () => {
+    expect(formToAddress("IW", 4, null, false)).toEqual({
+      area: "input_reg",
+      index: 4,
     });
   });
 });

@@ -24,12 +24,12 @@
   const ROWS: Row[] = [
     { key: "inputs", label: "Inputs", prefix: "I", kind: "bit", internal: false, note: "Discrete inputs (Modbus 1x)" },
     { key: "outputs", label: "Outputs", prefix: "Q", kind: "bit", internal: false, note: "Coils / outputs (Modbus 0x)" },
-    { key: "markers", label: "Markers", prefix: "M", kind: "bit", internal: true, note: "Internal marker bits" },
-    { key: "data16", label: "Data registers 16-bit", prefix: "R", kind: "word", internal: false, note: "Holding registers (Modbus 4x)" },
-    { key: "data32", label: "Data registers 32-bit", prefix: "RD", kind: "dword", internal: false, note: "Two R words each (overlay top of R pool)" },
-    { key: "internal16", label: "Internal registers", prefix: "MR", kind: "word", internal: true, note: "Internal 16-bit registers" },
-    { key: "timers", label: "Timers", prefix: "T", kind: "instance", internal: true, note: "Timer instances (TON/TOF/RTO)" },
-    { key: "counters", label: "Counters", prefix: "C", kind: "instance", internal: true, note: "Counter instances (CTU/CTD)" },
+    { key: "markers", label: "Markers", prefix: "M", kind: "bit", internal: true, note: "Marker bits — Modbus only via explicit matrix rule" },
+    { key: "data16", label: "Data registers 16-bit", prefix: "R", kind: "word", internal: false, note: "Holding R (Modbus 4x). User data; avoid R2048+ / R3072+ (T/C banks)" },
+    { key: "data32", label: "Data registers 32-bit (reserved)", prefix: "RD", kind: "dword", internal: false, note: "Reserves 2×R words in the pool — RD prefix not yet ladder-addressable" },
+    { key: "internal16", label: "Internal registers", prefix: "MR", kind: "word", internal: true, note: "Internal words — Modbus only via explicit matrix rule" },
+    { key: "timers", label: "Timers", prefix: "T", kind: "instance", internal: true, note: "TON/TOF/RTO instances → status at R2048+2n" },
+    { key: "counters", label: "Counters", prefix: "C", kind: "instance", internal: true, note: "CTU/CTD instances → status at R3072+2n" },
   ];
 
   const DEFAULTS: MemoryConfig = {
@@ -116,7 +116,7 @@
               <td>
                 <span class="prefix">{r.prefix}</span>
                 {r.label}
-                {#if r.internal}<span class="badge-int" title="Never on Modbus">internal</span>{/if}
+                {#if r.internal}<span class="badge-int" title="Not on Modbus identity fallback">internal</span>{/if}
               </td>
               <td class="c-count">
                 <input
@@ -166,21 +166,23 @@
         <dt><span class="prefix">Q</span> Outputs</dt>
         <dd>Coils <span class="mono">Q0…</span>. Read/write on Modbus (0x / FC01,05,15).</dd>
         <dt><span class="prefix">M</span> Markers <span class="badge-int">internal</span></dt>
-        <dd>Working bits <span class="mono">M0…</span> for interlocks, sequence steps. Never on Modbus.</dd>
+        <dd>Working bits <span class="mono">M0…</span>. On Modbus only via Translation Matrix (not identity).</dd>
         <dt><span class="prefix">R</span> Data registers 16-bit</dt>
-        <dd>Holding words <span class="mono">R0…</span>. Read/write on Modbus (4x / FC03,06,16).</dd>
-        <dt><span class="prefix">RD</span> Data registers 32-bit</dt>
         <dd>
-          Each <span class="mono">RD</span> uses <strong>two consecutive R words</strong>, allocated
-          above the 16-bit range. Example: <span class="mono">R0–R999</span> as 16-bit +
-          <span class="mono">RD0–RD499</span> occupying <span class="mono">R1000–R1999</span>.
+          Holding words <span class="mono">R0…</span> (Modbus 4x). Engine reserves
+          <span class="mono">R2048+</span> for timers and <span class="mono">R3072+</span> for counters.
+        </dd>
+        <dt><span class="prefix">RD</span> Data registers 32-bit (reserved)</dt>
+        <dd>
+          Reserves two R words each in the pool above the 16-bit range. Ladder <span class="mono">RD</span>
+          addressing is not implemented yet — use as pool reservation only.
         </dd>
         <dt><span class="prefix">MR</span> Internal registers <span class="badge-int">internal</span></dt>
-        <dd>Internal words <span class="mono">MR0…</span> for scratch math / setpoints. Never on Modbus.</dd>
+        <dd>Internal words <span class="mono">MR0…</span>. On Modbus only via Translation Matrix.</dd>
         <dt><span class="prefix">T</span> Timers</dt>
-        <dd>Timer instances <span class="mono">T0…</span> (TON / TOF / RTO).</dd>
+        <dd>Instances <span class="mono">T0…</span>; status image <span class="mono">R2048+2n</span> (ET), next word Q.</dd>
         <dt><span class="prefix">C</span> Counters</dt>
-        <dd>Counter instances <span class="mono">C0…</span> (CTU / CTD).</dd>
+        <dd>Instances <span class="mono">C0…</span>; status image <span class="mono">R3072+2n</span> (CV), next word Q.</dd>
       </dl>
       <p class="tip">
         The <strong>R pool</strong> is shared by 16- and 32-bit registers:

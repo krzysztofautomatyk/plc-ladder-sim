@@ -2,7 +2,7 @@
 
 | Module | Responsibility |
 |--------|----------------|
-| `memory.rs` | Process image (I/Q/MW/IW) |
+| `memory.rs` | Process image (I/Q/M/R/MR/IW) + compact UI snapshot |
 | `compiler.rs` | Ladder AST + all element types + bytecode |
 | `engine.rs` | Scan cycle, edge memory, SET/RESET, timers |
 | `modbus.rs` | TCP slave start/stop/port |

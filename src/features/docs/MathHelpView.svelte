@@ -27,25 +27,25 @@
         <tr>
           <td><strong>ADD</strong></td>
           <td>dest = a + b</td>
-          <td>MW / IW words</td>
+          <td>R / MR / IW words</td>
           <td>Overflow → PLC FAULT/STOP</td>
         </tr>
         <tr>
           <td><strong>SUB</strong></td>
           <td>dest = a − b</td>
-          <td>MW / IW</td>
+          <td>R / MR / IW</td>
           <td>Checked arithmetic</td>
         </tr>
         <tr>
           <td><strong>MUL</strong></td>
           <td>dest = a × b</td>
-          <td>MW / IW</td>
+          <td>R / MR / IW</td>
           <td>Overflow → FAULT</td>
         </tr>
         <tr>
           <td><strong>DIV</strong></td>
           <td>dest = a ÷ b</td>
-          <td>MW / IW</td>
+          <td>R / MR / IW</td>
           <td>Divide-by-zero → FAULT</td>
         </tr>
         <tr>
@@ -64,8 +64,8 @@
     </table>
 
     <p style="margin-top:16px;font-size:12px;color:var(--tia-muted);line-height:1.5">
-      Demo network 4: set <code>MW40</code> ≥ <code>MW41</code> (Watch / tags), then RUN — MOVE copies
-      to <code>MW42</code> and sets <code>Q3</code>.
+      Demo network 4: set <code>R40</code> ≥ <code>R41</code> (Watch / process image), then RUN — MOVE copies
+      to <code>R42</code> and sets <code>Q3</code>.
     </p>
   </div>
 </div>

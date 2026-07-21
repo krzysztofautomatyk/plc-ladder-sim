@@ -168,7 +168,15 @@
     }
   }
 
+  /** Holding banks for TV/CV/T/C (engine status) are outside user data16 — always valid. */
+  function isTimerCounterBank(a: Address): boolean {
+    if (a.area !== "holding") return false;
+    const i = a.index;
+    return (i >= 2048 && i < 2048 + 512) || (i >= 3072 && i < 3072 + 512);
+  }
+
   function allocError(a: Address): string | null {
+    if (isTimerCounterBank(a)) return null;
     const lim = allocLimit(a.area);
     if (lim != null && a.index >= lim) {
       return `${formatAddress(a)} is outside the allocated range (0–${Math.max(0, lim - 1)}). Raise it in Memory allocation.`;
@@ -383,9 +391,14 @@
                   <select bind:value={prefix}>
                     <option value="I">I — Input</option>
                     <option value="Q">Q — Output</option>
-                    <option value="M">M — Marker bit (internal)</option>
-                    <option value="MR">MR — Memory register (internal)</option>
-                    <option value="R">R — Register (Modbus)</option>
+                    <option value="M">M — Marker bit</option>
+                    <option value="MR">MR — Internal register</option>
+                    <option value="R">R — Holding register</option>
+                    <option value="IW">IW — Input register</option>
+                    <option value="TV">TV — Timer value (ET ms)</option>
+                    <option value="CV">CV — Counter value</option>
+                    <option value="T">T — Timer done bit</option>
+                    <option value="C">C — Counter done bit</option>
                   </select>
                 </label>
                 <label>
@@ -396,7 +409,13 @@
                   <input
                     type="checkbox"
                     bind:checked={useBit}
-                    disabled={prefix === "I" || prefix === "Q" || prefix === "M"}
+                    disabled={prefix === "I" ||
+                      prefix === "Q" ||
+                      prefix === "M" ||
+                      prefix === "T" ||
+                      prefix === "C" ||
+                      prefix === "TV" ||
+                      prefix === "CV"}
                   />
                   Bit (0–15)
                 </label>
@@ -421,7 +440,7 @@
               <div class="row">
                 <input
                   class="grow"
-                  placeholder="e.g. I0, Q1, M2.3, R10, R1.5"
+                  placeholder="e.g. I0, R10, TV0, CV1, MOVE TV0→R20"
                   bind:value={quick}
                   onkeydown={(e) => e.key === "Enter" && applyQuick()}
                 />

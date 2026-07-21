@@ -4,7 +4,7 @@
 
 use super::compiler::MemArea;
 use super::memory::PlcMemory;
-use super::modbus_map::{ModbusMap, ModbusTable};
+use super::modbus_map::{ModbusMap, ModbusTable, ResolvedBit, ResolvedReg, WriteProtectMode};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::future::Future;
@@ -73,61 +73,216 @@ impl Service for PlcModbusService {
     }
 }
 
+// ─── Process-image accessors (area-aware) ────────────────────────────────────
+
+fn get_plc_bit(memory: &PlcMemory, area: MemArea, index: u16) -> Result<bool, ExceptionCode> {
+    match area {
+        MemArea::Coil => memory
+            .get_coil(index)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::Discrete => memory
+            .get_discrete(index)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::MemoryBit => memory
+            .get_memory_bit(index)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::Holding => memory
+            .get_holding(index)
+            .map(|v| v != 0)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::InputReg => memory
+            .get_input_reg(index)
+            .map(|v| v != 0)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::MemoryWord => memory
+            .get_memory_word(index)
+            .map(|v| v != 0)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+    }
+}
+
+fn set_plc_bit(
+    memory: &PlcMemory,
+    area: MemArea,
+    index: u16,
+    value: bool,
+) -> Result<(), ExceptionCode> {
+    match area {
+        MemArea::Coil => memory
+            .set_coil(index, value)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::Discrete => memory
+            .set_discrete(index, value)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::MemoryBit => memory
+            .set_memory_bit(index, value)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::Holding => memory
+            .set_holding(index, if value { 1 } else { 0 })
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::InputReg => memory
+            .set_input_reg(index, if value { 1 } else { 0 })
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::MemoryWord => memory
+            .set_memory_word(index, if value { 1 } else { 0 })
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+    }
+}
+
+fn get_plc_word(memory: &PlcMemory, area: MemArea, index: u16) -> Result<u16, ExceptionCode> {
+    match area {
+        MemArea::Holding => memory
+            .get_holding(index)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::InputReg => memory
+            .get_input_reg(index)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::MemoryWord => memory
+            .get_memory_word(index)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::Coil => memory
+            .get_coil(index)
+            .map(|b| if b { 1 } else { 0 })
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::Discrete => memory
+            .get_discrete(index)
+            .map(|b| if b { 1 } else { 0 })
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::MemoryBit => memory
+            .get_memory_bit(index)
+            .map(|b| if b { 1 } else { 0 })
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+    }
+}
+
+fn set_plc_word(
+    memory: &PlcMemory,
+    area: MemArea,
+    index: u16,
+    value: u16,
+) -> Result<(), ExceptionCode> {
+    match area {
+        MemArea::Holding => memory
+            .set_holding(index, value)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::InputReg => memory
+            .set_input_reg(index, value)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::MemoryWord => memory
+            .set_memory_word(index, value)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::Coil => memory
+            .set_coil(index, value != 0)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::Discrete => memory
+            .set_discrete(index, value != 0)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+        MemArea::MemoryBit => memory
+            .set_memory_bit(index, value != 0)
+            .map_err(|_| ExceptionCode::IllegalDataAddress),
+    }
+}
+
+fn get_word_bit(
+    memory: &PlcMemory,
+    area: MemArea,
+    word_index: u16,
+    bit: u8,
+) -> Result<bool, ExceptionCode> {
+    let word = get_plc_word(memory, area, word_index)?;
+    Ok(((word >> bit) & 1) != 0)
+}
+
+fn set_word_bit(
+    memory: &PlcMemory,
+    area: MemArea,
+    word_index: u16,
+    bit: u8,
+    value: bool,
+) -> Result<(), ExceptionCode> {
+    let word = get_plc_word(memory, area, word_index)?;
+    let mask = 1u16 << bit;
+    let next = if value { word | mask } else { word & !mask };
+    set_plc_word(memory, area, word_index, next)
+}
+
+fn pack_bits(memory: &PlcMemory, area: MemArea, start: u16) -> Result<u16, ExceptionCode> {
+    let mut word = 0u16;
+    for i in 0u16..16 {
+        let idx = start
+            .checked_add(i)
+            .ok_or(ExceptionCode::IllegalDataAddress)?;
+        if get_plc_bit(memory, area, idx)? {
+            word |= 1u16 << i;
+        }
+    }
+    Ok(word)
+}
+
+fn unpack_bits(
+    memory: &PlcMemory,
+    area: MemArea,
+    start: u16,
+    value: u16,
+) -> Result<(), ExceptionCode> {
+    for i in 0u16..16 {
+        let idx = start
+            .checked_add(i)
+            .ok_or(ExceptionCode::IllegalDataAddress)?;
+        let bit = ((value >> i) & 1) != 0;
+        set_plc_bit(memory, area, idx, bit)?;
+    }
+    Ok(())
+}
+
+// ─── Mapped Modbus table access ──────────────────────────────────────────────
+
 fn read_bit_mapped(
     memory: &PlcMemory,
     map: &ModbusMap,
     table: ModbusTable,
     addr: u16,
 ) -> Result<bool, ExceptionCode> {
-    let (area, idx) = map
+    let resolved = map
         .resolve_bit(table, addr)
         .ok_or(ExceptionCode::IllegalDataAddress)?;
-    match area {
-        MemArea::Coil => memory
-            .get_coil(idx)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::Discrete => memory
-            .get_discrete(idx)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::Holding => memory
-            .get_holding(idx)
-            .map(|v| v != 0)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::InputReg => memory
-            .get_input_reg(idx)
-            .map(|v| v != 0)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        // Internal memory (M / MR) is never accessible over Modbus.
-        MemArea::MemoryBit | MemArea::MemoryWord => Err(ExceptionCode::IllegalDataAddress),
+    match resolved {
+        ResolvedBit::Direct { area, index, .. } => get_plc_bit(memory, area, index),
+        ResolvedBit::FromWord {
+            area,
+            word_index,
+            bit,
+            ..
+        } => get_word_bit(memory, area, word_index, bit),
     }
 }
 
+/// Attempt a mapped bit write. Returns `Ok(true)` if applied, `Ok(false)` if
+/// silently dropped (write-protected + SilentDrop), `Err` for Strict deny /
+/// illegal address.
 fn write_bit_mapped(
     memory: &PlcMemory,
     map: &ModbusMap,
     table: ModbusTable,
     addr: u16,
     value: bool,
-) -> Result<(), ExceptionCode> {
-    let (area, idx) = map
+) -> Result<bool, ExceptionCode> {
+    let resolved = map
         .resolve_bit(table, addr)
         .ok_or(ExceptionCode::IllegalDataAddress)?;
-    match area {
-        MemArea::Coil => memory
-            .set_coil(idx, value)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::Discrete => memory
-            .set_discrete(idx, value)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::Holding => memory
-            .set_holding(idx, if value { 1 } else { 0 })
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::InputReg => memory
-            .set_input_reg(idx, if value { 1 } else { 0 })
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        // Internal memory (M / MR) is never accessible over Modbus.
-        MemArea::MemoryBit | MemArea::MemoryWord => Err(ExceptionCode::IllegalDataAddress),
+    if resolved.write_protected() {
+        return deny_write(map, "bit", addr);
     }
+    match resolved {
+        ResolvedBit::Direct { area, index, .. } => set_plc_bit(memory, area, index, value)?,
+        ResolvedBit::FromWord {
+            area,
+            word_index,
+            bit,
+            ..
+        } => set_word_bit(memory, area, word_index, bit, value)?,
+    }
+    Ok(true)
 }
 
 fn read_reg_mapped(
@@ -136,26 +291,12 @@ fn read_reg_mapped(
     table: ModbusTable,
     addr: u16,
 ) -> Result<u16, ExceptionCode> {
-    let (area, idx) = map
+    let resolved = map
         .resolve_reg(table, addr)
         .ok_or(ExceptionCode::IllegalDataAddress)?;
-    match area {
-        MemArea::Holding => memory
-            .get_holding(idx)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::InputReg => memory
-            .get_input_reg(idx)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::Coil => memory
-            .get_coil(idx)
-            .map(|b| if b { 1 } else { 0 })
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::Discrete => memory
-            .get_discrete(idx)
-            .map(|b| if b { 1 } else { 0 })
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        // Internal memory (M / MR) is never accessible over Modbus.
-        MemArea::MemoryBit | MemArea::MemoryWord => Err(ExceptionCode::IllegalDataAddress),
+    match resolved {
+        ResolvedReg::Direct { area, index, .. } => get_plc_word(memory, area, index),
+        ResolvedReg::FromBits { area, start, .. } => pack_bits(memory, area, start),
     }
 }
 
@@ -165,25 +306,31 @@ fn write_reg_mapped(
     table: ModbusTable,
     addr: u16,
     value: u16,
-) -> Result<(), ExceptionCode> {
-    let (area, idx) = map
+) -> Result<bool, ExceptionCode> {
+    let resolved = map
         .resolve_reg(table, addr)
         .ok_or(ExceptionCode::IllegalDataAddress)?;
-    match area {
-        MemArea::Holding => memory
-            .set_holding(idx, value)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::InputReg => memory
-            .set_input_reg(idx, value)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::Coil => memory
-            .set_coil(idx, value != 0)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        MemArea::Discrete => memory
-            .set_discrete(idx, value != 0)
-            .map_err(|_| ExceptionCode::IllegalDataAddress),
-        // Internal memory (M / MR) is never accessible over Modbus.
-        MemArea::MemoryBit | MemArea::MemoryWord => Err(ExceptionCode::IllegalDataAddress),
+    if resolved.write_protected() {
+        return deny_write(map, "reg", addr);
+    }
+    match resolved {
+        ResolvedReg::Direct { area, index, .. } => set_plc_word(memory, area, index, value)?,
+        ResolvedReg::FromBits { area, start, .. } => unpack_bits(memory, area, start, value)?,
+    }
+    Ok(true)
+}
+
+/// Per-rule write protect handling. Global write-off is handled separately.
+fn deny_write(map: &ModbusMap, kind: &str, addr: u16) -> Result<bool, ExceptionCode> {
+    match map.write_protect_mode() {
+        WriteProtectMode::Strict => {
+            warn!(target: "modbus", kind, addr, "write blocked (rule write-protected, strict)");
+            Err(ExceptionCode::IllegalDataAddress)
+        }
+        WriteProtectMode::SilentDrop => {
+            warn!(target: "modbus", kind, addr, "write silently dropped (rule write-protected)");
+            Ok(false)
+        }
     }
 }
 
@@ -278,14 +425,15 @@ fn handle_request(
             if !memory.allow_modbus_write() {
                 return Err(ExceptionCode::ServerDeviceFailure);
             }
-            write_bit_mapped(memory, map, ModbusTable::Coil, addr, value)?;
+            // SilentDrop may return Ok(false); response still acknowledges.
+            let _applied = write_bit_mapped(memory, map, ModbusTable::Coil, addr, value)?;
             Ok(Response::WriteSingleCoil(addr, value))
         }
         Request::WriteSingleRegister(addr, value) => {
             if !memory.allow_modbus_write() {
                 return Err(ExceptionCode::ServerDeviceFailure);
             }
-            write_reg_mapped(memory, map, ModbusTable::Holding, addr, value)?;
+            let _applied = write_reg_mapped(memory, map, ModbusTable::Holding, addr, value)?;
             Ok(Response::WriteSingleRegister(addr, value))
         }
         Request::WriteMultipleCoils(addr, values) => {
@@ -294,7 +442,7 @@ fn handle_request(
             }
             let qty = values.len() as u16;
             for (i, v) in values.iter().enumerate() {
-                write_bit_mapped(
+                let _applied = write_bit_mapped(
                     memory,
                     map,
                     ModbusTable::Coil,
@@ -310,7 +458,7 @@ fn handle_request(
             }
             let qty = values.len() as u16;
             for (i, v) in values.iter().enumerate() {
-                write_reg_mapped(
+                let _applied = write_reg_mapped(
                     memory,
                     map,
                     ModbusTable::Holding,
@@ -585,59 +733,236 @@ mod tests {
     }
 
     #[test]
-    fn internal_memory_areas_are_never_exposed_on_modbus() {
-        use crate::plc::modbus_map::{ModbusMapEntry, ModbusMapSnapshot};
+    fn internal_memory_reachable_only_via_explicit_map() {
+        use crate::plc::modbus_map::{
+            MappingType, ModbusMapEntry, ModbusMapSnapshot, WriteProtectMode,
+        };
 
         let memory = PlcMemory::new().into_arc();
         memory.set_memory_bit(3, true).unwrap();
         memory.set_memory_word(2, 9).unwrap();
 
-        // Deliberately (mis)map Modbus addresses onto internal M / MR areas.
+        // Explicit Direct rules expose M/MR (enterprise matrix).
         let map = ModbusMap::new();
         map.set_all(ModbusMapSnapshot {
             identity_fallback: false,
+            write_protect_mode: WriteProtectMode::Strict,
             entries: vec![
                 ModbusMapEntry {
                     id: "m".into(),
                     enabled: true,
+                    mapping_type: MappingType::Direct,
                     symbol_name: String::new(),
                     plc_area: MemArea::MemoryBit,
-                    plc_index: 3,
+                    plc_start: 3,
+                    plc_bit_offset: 0,
                     modbus_table: ModbusTable::Coil,
-                    modbus_address: 0,
+                    modbus_start: 0,
+                    length: 1,
+                    is_write_protected: false,
                     comment: String::new(),
                 },
                 ModbusMapEntry {
                     id: "r".into(),
                     enabled: true,
+                    mapping_type: MappingType::Direct,
                     symbol_name: String::new(),
                     plc_area: MemArea::MemoryWord,
-                    plc_index: 2,
+                    plc_start: 2,
+                    plc_bit_offset: 0,
                     modbus_table: ModbusTable::Holding,
-                    modbus_address: 0,
+                    modbus_start: 0,
+                    length: 1,
+                    is_write_protected: false,
                     comment: String::new(),
                 },
             ],
-        });
+        })
+        .unwrap();
 
-        // Internal memory must be rejected on every function code, even when mapped.
+        assert!(read_bit_mapped(&memory, &map, ModbusTable::Coil, 0).unwrap());
         assert_eq!(
-            read_bit_mapped(&memory, &map, ModbusTable::Coil, 0).unwrap_err(),
-            ExceptionCode::IllegalDataAddress
-        );
-        assert_eq!(
-            read_reg_mapped(&memory, &map, ModbusTable::Holding, 0).unwrap_err(),
-            ExceptionCode::IllegalDataAddress
+            read_reg_mapped(&memory, &map, ModbusTable::Holding, 0).unwrap(),
+            9
         );
         memory.set_allow_modbus_write(true);
+        assert!(write_bit_mapped(&memory, &map, ModbusTable::Coil, 0, false).unwrap());
+        assert!(!memory.get_memory_bit(3).unwrap());
+        assert!(write_reg_mapped(&memory, &map, ModbusTable::Holding, 0, 5).unwrap());
+        assert_eq!(memory.get_memory_word(2).unwrap(), 5);
+
+        // Identity fallback never invents M/MR exposure.
+        map.set_all(ModbusMapSnapshot {
+            identity_fallback: true,
+            write_protect_mode: WriteProtectMode::Strict,
+            entries: vec![],
+        })
+        .unwrap();
+        // Coil 0 → Q0 identity, not M0.
+        memory.set_coil(0, true).unwrap();
+        memory.set_memory_bit(0, false).unwrap();
+        assert!(read_bit_mapped(&memory, &map, ModbusTable::Coil, 0).unwrap());
+        assert!(!memory.get_memory_bit(0).unwrap());
+    }
+
+    #[test]
+    fn bit_to_register_packs_and_unpacks_memory_bits() {
+        use crate::plc::modbus_map::{
+            MappingType, ModbusMapEntry, ModbusMapSnapshot, WriteProtectMode,
+        };
+
+        let memory = PlcMemory::new().into_arc();
+        for i in 0..16u16 {
+            memory.set_memory_bit(i, i % 2 == 0).unwrap();
+        }
+        let map = ModbusMap::new();
+        map.set_all(ModbusMapSnapshot {
+            identity_fallback: false,
+            write_protect_mode: WriteProtectMode::Strict,
+            entries: vec![ModbusMapEntry {
+                id: "b2r".into(),
+                enabled: true,
+                mapping_type: MappingType::BitToRegister,
+                symbol_name: String::new(),
+                plc_area: MemArea::MemoryBit,
+                plc_start: 0,
+                plc_bit_offset: 0,
+                modbus_table: ModbusTable::Holding,
+                modbus_start: 100,
+                length: 1,
+                is_write_protected: false,
+                comment: String::new(),
+            }],
+        })
+        .unwrap();
+
+        // Even indices set → bits 0,2,4,...,14 → 0x5555
         assert_eq!(
-            write_bit_mapped(&memory, &map, ModbusTable::Coil, 0, true).unwrap_err(),
+            read_reg_mapped(&memory, &map, ModbusTable::Holding, 100).unwrap(),
+            0x5555
+        );
+
+        memory.set_allow_modbus_write(true);
+        write_reg_mapped(&memory, &map, ModbusTable::Holding, 100, 0x00FF).unwrap();
+        for i in 0..16u16 {
+            assert_eq!(
+                memory.get_memory_bit(i).unwrap(),
+                i < 8,
+                "bit M{i} after unpack"
+            );
+        }
+    }
+
+    #[test]
+    fn register_to_bit_extracts_status_bits() {
+        use crate::plc::modbus_map::{
+            MappingType, ModbusMapEntry, ModbusMapSnapshot, WriteProtectMode,
+        };
+
+        let memory = PlcMemory::new().into_arc();
+        memory.set_holding(10, 0b1000_0000_0000_0001).unwrap(); // bits 0 and 15
+        let map = ModbusMap::new();
+        map.set_all(ModbusMapSnapshot {
+            identity_fallback: false,
+            write_protect_mode: WriteProtectMode::Strict,
+            entries: vec![ModbusMapEntry {
+                id: "r2b".into(),
+                enabled: true,
+                mapping_type: MappingType::RegisterToBit,
+                symbol_name: String::new(),
+                plc_area: MemArea::Holding,
+                plc_start: 10,
+                plc_bit_offset: 0,
+                modbus_table: ModbusTable::Coil,
+                modbus_start: 101,
+                length: 16,
+                is_write_protected: true,
+                comment: String::new(),
+            }],
+        })
+        .unwrap();
+
+        assert!(read_bit_mapped(&memory, &map, ModbusTable::Coil, 101).unwrap());
+        assert!(!read_bit_mapped(&memory, &map, ModbusTable::Coil, 102).unwrap());
+        assert!(read_bit_mapped(&memory, &map, ModbusTable::Coil, 116).unwrap());
+
+        // Write protected + Strict → exception, R10 unchanged.
+        memory.set_allow_modbus_write(true);
+        assert_eq!(
+            write_bit_mapped(&memory, &map, ModbusTable::Coil, 101, false).unwrap_err(),
             ExceptionCode::IllegalDataAddress
         );
-        assert_eq!(
-            write_reg_mapped(&memory, &map, ModbusTable::Holding, 0, 5).unwrap_err(),
-            ExceptionCode::IllegalDataAddress
-        );
+        assert_eq!(memory.get_holding(10).unwrap(), 0b1000_0000_0000_0001);
+    }
+
+    #[test]
+    fn write_protect_silent_drop_acks_without_mutation() {
+        use crate::plc::modbus_map::{
+            MappingType, ModbusMapEntry, ModbusMapSnapshot, WriteProtectMode,
+        };
+
+        let memory = PlcMemory::new().into_arc();
+        memory.set_holding(500, 42).unwrap();
+        let map = ModbusMap::new();
+        map.set_all(ModbusMapSnapshot {
+            identity_fallback: false,
+            write_protect_mode: WriteProtectMode::SilentDrop,
+            entries: vec![ModbusMapEntry {
+                id: "wp".into(),
+                enabled: true,
+                mapping_type: MappingType::Direct,
+                symbol_name: String::new(),
+                plc_area: MemArea::Holding,
+                plc_start: 500,
+                plc_bit_offset: 0,
+                modbus_table: ModbusTable::Holding,
+                modbus_start: 500,
+                length: 1,
+                is_write_protected: true,
+                comment: String::new(),
+            }],
+        })
+        .unwrap();
+
+        memory.set_allow_modbus_write(true);
+        // Handler returns success but value stays 42.
+        handle_request(&memory, &map, Request::WriteSingleRegister(500, 99)).unwrap();
+        assert_eq!(memory.get_holding(500).unwrap(), 42);
+    }
+
+    #[test]
+    fn write_protect_strict_returns_illegal_data_address() {
+        use crate::plc::modbus_map::{
+            MappingType, ModbusMapEntry, ModbusMapSnapshot, WriteProtectMode,
+        };
+
+        let memory = PlcMemory::new().into_arc();
+        memory.set_holding(500, 42).unwrap();
+        let map = ModbusMap::new();
+        map.set_all(ModbusMapSnapshot {
+            identity_fallback: false,
+            write_protect_mode: WriteProtectMode::Strict,
+            entries: vec![ModbusMapEntry {
+                id: "wp".into(),
+                enabled: true,
+                mapping_type: MappingType::Direct,
+                symbol_name: String::new(),
+                plc_area: MemArea::Holding,
+                plc_start: 500,
+                plc_bit_offset: 0,
+                modbus_table: ModbusTable::Holding,
+                modbus_start: 500,
+                length: 1,
+                is_write_protected: true,
+                comment: String::new(),
+            }],
+        })
+        .unwrap();
+
+        memory.set_allow_modbus_write(true);
+        let err = handle_request(&memory, &map, Request::WriteSingleRegister(500, 99)).unwrap_err();
+        assert_eq!(err, ExceptionCode::IllegalDataAddress);
+        assert_eq!(memory.get_holding(500).unwrap(), 42);
     }
 
     #[test]
