@@ -197,6 +197,8 @@ fn sym(
         MemArea::Coil => format!("Q{}", index),
         MemArea::Holding => format!("MW{}", index),
         MemArea::InputReg => format!("IW{}", index),
+        MemArea::MemoryBit => format!("M{}", index),
+        MemArea::MemoryWord => format!("MR{}", index),
     };
     PlcSymbol {
         id: id.into(),

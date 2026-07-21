@@ -100,6 +100,8 @@ pub fn run() {
             commands::set_discrete_input,
             commands::set_coil,
             commands::set_holding_register,
+            commands::set_memory_bit,
+            commands::set_memory_word,
             commands::export_program_json,
             commands::import_program_json,
             commands::export_program_bytecode,

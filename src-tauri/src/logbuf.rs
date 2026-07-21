@@ -72,6 +72,27 @@ impl LogStore {
         }
         buf.push_back(entry);
     }
+
+    fn snapshot(&self, limit: usize, min_level: &str) -> Vec<LogEntry> {
+        let min = level_rank(min_level);
+        let buf = self.buf.lock();
+        let mut out: Vec<LogEntry> = buf
+            .iter()
+            .filter(|e| level_rank(&e.level) >= min)
+            .cloned()
+            .collect();
+        if out.len() > limit {
+            out.drain(0..out.len() - limit);
+        }
+        out
+    }
+
+    fn clear(&self) -> usize {
+        let mut buf = self.buf.lock();
+        let n = buf.len();
+        buf.clear();
+        n
+    }
 }
 
 static LOG_STORE: Lazy<LogStore> = Lazy::new(LogStore::new);
@@ -99,25 +120,12 @@ fn level_str(level: &Level) -> &'static str {
 /// Return the most recent log lines (chronological, oldest first), keeping only
 /// entries at or above `min_level` and capping the result at `limit`.
 pub fn snapshot(limit: usize, min_level: &str) -> Vec<LogEntry> {
-    let min = level_rank(min_level);
-    let buf = LOG_STORE.buf.lock();
-    let mut out: Vec<LogEntry> = buf
-        .iter()
-        .filter(|e| level_rank(&e.level) >= min)
-        .cloned()
-        .collect();
-    if out.len() > limit {
-        out.drain(0..out.len() - limit);
-    }
-    out
+    LOG_STORE.snapshot(limit, min_level)
 }
 
 /// Drop all buffered log lines. Returns the number of lines removed.
 pub fn clear() -> usize {
-    let mut buf = LOG_STORE.buf.lock();
-    let n = buf.len();
-    buf.clear();
-    n
+    LOG_STORE.clear()
 }
 
 /// Field visitor extracting the `message` and remaining fields separately.
@@ -179,16 +187,16 @@ mod tests {
 
     #[test]
     fn push_snapshot_and_level_filter() {
-        clear();
-        LOG_STORE.push("info", "t", "hello".into(), String::new());
-        LOG_STORE.push("warn", "t", "careful".into(), "code=5".into());
-        LOG_STORE.push("error", "t", "boom".into(), String::new());
+        let store = LogStore::new();
+        store.push("info", "t", "hello".into(), String::new());
+        store.push("warn", "t", "careful".into(), "code=5".into());
+        store.push("error", "t", "boom".into(), String::new());
 
-        let all = snapshot(100, "trace");
+        let all = store.snapshot(100, "trace");
         assert_eq!(all.len(), 3);
         assert!(all[0].seq < all[1].seq && all[1].seq < all[2].seq);
 
-        let warn_plus = snapshot(100, "warn");
+        let warn_plus = store.snapshot(100, "warn");
         assert_eq!(warn_plus.len(), 2);
         assert_eq!(warn_plus[0].level, "warn");
         assert_eq!(warn_plus[1].level, "error");
@@ -196,11 +204,11 @@ mod tests {
 
     #[test]
     fn limit_keeps_newest() {
-        clear();
+        let store = LogStore::new();
         for i in 0..10 {
-            LOG_STORE.push("info", "t", format!("m{i}"), String::new());
+            store.push("info", "t", format!("m{i}"), String::new());
         }
-        let last3 = snapshot(3, "trace");
+        let last3 = store.snapshot(3, "trace");
         assert_eq!(last3.len(), 3);
         assert_eq!(last3[0].message, "m7");
         assert_eq!(last3[2].message, "m9");
@@ -208,9 +216,9 @@ mod tests {
 
     #[test]
     fn clear_empties_buffer() {
-        clear();
-        LOG_STORE.push("info", "t", "x".into(), String::new());
-        assert!(clear() >= 1);
-        assert_eq!(snapshot(10, "trace").len(), 0);
+        let store = LogStore::new();
+        store.push("info", "t", "x".into(), String::new());
+        assert!(store.clear() >= 1);
+        assert_eq!(store.snapshot(10, "trace").len(), 0);
     }
 }

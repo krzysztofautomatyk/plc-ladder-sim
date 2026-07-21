@@ -9,6 +9,15 @@
     if (!Number.isFinite(v) || v < 0 || v > 65535) return;
     await plc.setHolding(addr, Math.floor(v));
   }
+
+  async function editMemoryWord(addr: number) {
+    const cur = plc.memory.memory_words?.[addr] ?? 0;
+    const raw = window.prompt(`MR${addr} (internal, never on Modbus)`, String(cur));
+    if (raw == null) return;
+    const v = Number(raw);
+    if (!Number.isFinite(v) || v < 0 || v > 65535) return;
+    await plc.setMemoryWord(addr, Math.floor(v));
+  }
 </script>
 
 <div>
@@ -44,6 +53,29 @@
     <button type="button" class="watch-reg" onclick={() => editHolding(addr)}>
       <span>MW{addr}</span>
       <span>{plc.memory.holding_registers[addr] ?? 0}</span>
+    </button>
+  {/each}
+
+  <div class="section-label">Markers M (internal · click = force)</div>
+  <div class="watch-grid">
+    {#each Array(8) as _, i}
+      <button
+        type="button"
+        class="watch-bit"
+        class:on={plc.memory.memory_bits?.[i]}
+        onclick={() => plc.toggleMemoryBit(i)}
+      >
+        <span class="tag">M{i}</span>
+        <span class="val">{plc.memory.memory_bits?.[i] ? "1" : "0"}</span>
+      </button>
+    {/each}
+  </div>
+
+  <div class="section-label">Registers MR (internal · click edit)</div>
+  {#each [0, 1, 2, 3] as addr}
+    <button type="button" class="watch-reg" onclick={() => editMemoryWord(addr)}>
+      <span>MR{addr}</span>
+      <span>{plc.memory.memory_words?.[addr] ?? 0}</span>
     </button>
   {/each}
 

@@ -243,6 +243,28 @@ pub fn set_holding_register(
     }
 }
 
+/// Force an internal marker bit (M) — ladder-only working memory.
+#[tauri::command]
+pub fn set_memory_bit(
+    state: State<'_, AppState>,
+    address: u16,
+    value: bool,
+) -> CommandResult<bool> {
+    match state.memory.set_memory_bit(address, value) {
+        Ok(()) => CommandResult::ok(value),
+        Err(e) => CommandResult::err(e.to_string()),
+    }
+}
+
+/// Force an internal memory register (MR) — ladder-only working memory.
+#[tauri::command]
+pub fn set_memory_word(state: State<'_, AppState>, address: u16, value: u16) -> CommandResult<u16> {
+    match state.memory.set_memory_word(address, value) {
+        Ok(()) => CommandResult::ok(value),
+        Err(e) => CommandResult::err(e.to_string()),
+    }
+}
+
 /// Export program as JSON string.
 #[tauri::command]
 pub fn export_program_json(state: State<'_, AppState>) -> CommandResult<String> {

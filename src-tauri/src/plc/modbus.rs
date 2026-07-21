@@ -97,6 +97,8 @@ fn read_bit_mapped(
             .get_input_reg(idx)
             .map(|v| v != 0)
             .map_err(|_| ExceptionCode::IllegalDataAddress),
+        // Internal memory (M / MR) is never accessible over Modbus.
+        MemArea::MemoryBit | MemArea::MemoryWord => Err(ExceptionCode::IllegalDataAddress),
     }
 }
 
@@ -123,6 +125,8 @@ fn write_bit_mapped(
         MemArea::InputReg => memory
             .set_input_reg(idx, if value { 1 } else { 0 })
             .map_err(|_| ExceptionCode::IllegalDataAddress),
+        // Internal memory (M / MR) is never accessible over Modbus.
+        MemArea::MemoryBit | MemArea::MemoryWord => Err(ExceptionCode::IllegalDataAddress),
     }
 }
 
@@ -150,6 +154,8 @@ fn read_reg_mapped(
             .get_discrete(idx)
             .map(|b| if b { 1 } else { 0 })
             .map_err(|_| ExceptionCode::IllegalDataAddress),
+        // Internal memory (M / MR) is never accessible over Modbus.
+        MemArea::MemoryBit | MemArea::MemoryWord => Err(ExceptionCode::IllegalDataAddress),
     }
 }
 
@@ -176,6 +182,8 @@ fn write_reg_mapped(
         MemArea::Discrete => memory
             .set_discrete(idx, value != 0)
             .map_err(|_| ExceptionCode::IllegalDataAddress),
+        // Internal memory (M / MR) is never accessible over Modbus.
+        MemArea::MemoryBit | MemArea::MemoryWord => Err(ExceptionCode::IllegalDataAddress),
     }
 }
 
@@ -574,6 +582,62 @@ mod tests {
         drop(probe);
         let listener = bind_with_retry(addr, addr.port(), 20).await.unwrap();
         assert_eq!(listener.local_addr().unwrap().port(), addr.port());
+    }
+
+    #[test]
+    fn internal_memory_areas_are_never_exposed_on_modbus() {
+        use crate::plc::modbus_map::{ModbusMapEntry, ModbusMapSnapshot};
+
+        let memory = PlcMemory::new().into_arc();
+        memory.set_memory_bit(3, true).unwrap();
+        memory.set_memory_word(2, 9).unwrap();
+
+        // Deliberately (mis)map Modbus addresses onto internal M / MR areas.
+        let map = ModbusMap::new();
+        map.set_all(ModbusMapSnapshot {
+            identity_fallback: false,
+            entries: vec![
+                ModbusMapEntry {
+                    id: "m".into(),
+                    enabled: true,
+                    symbol_name: String::new(),
+                    plc_area: MemArea::MemoryBit,
+                    plc_index: 3,
+                    modbus_table: ModbusTable::Coil,
+                    modbus_address: 0,
+                    comment: String::new(),
+                },
+                ModbusMapEntry {
+                    id: "r".into(),
+                    enabled: true,
+                    symbol_name: String::new(),
+                    plc_area: MemArea::MemoryWord,
+                    plc_index: 2,
+                    modbus_table: ModbusTable::Holding,
+                    modbus_address: 0,
+                    comment: String::new(),
+                },
+            ],
+        });
+
+        // Internal memory must be rejected on every function code, even when mapped.
+        assert_eq!(
+            read_bit_mapped(&memory, &map, ModbusTable::Coil, 0).unwrap_err(),
+            ExceptionCode::IllegalDataAddress
+        );
+        assert_eq!(
+            read_reg_mapped(&memory, &map, ModbusTable::Holding, 0).unwrap_err(),
+            ExceptionCode::IllegalDataAddress
+        );
+        memory.set_allow_modbus_write(true);
+        assert_eq!(
+            write_bit_mapped(&memory, &map, ModbusTable::Coil, 0, true).unwrap_err(),
+            ExceptionCode::IllegalDataAddress
+        );
+        assert_eq!(
+            write_reg_mapped(&memory, &map, ModbusTable::Holding, 0, 5).unwrap_err(),
+            ExceptionCode::IllegalDataAddress
+        );
     }
 
     #[test]

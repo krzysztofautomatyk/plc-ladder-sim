@@ -667,7 +667,9 @@ impl PlcEngine {
                     None => v != 0,
                 })
             }
-            MemArea::Coil | MemArea::Holding => self.read_bit_live(area, index, bit),
+            MemArea::Coil | MemArea::Holding | MemArea::MemoryBit | MemArea::MemoryWord => {
+                self.read_bit_live(area, index, bit)
+            }
         }
     }
 
@@ -695,6 +697,20 @@ impl PlcEngine {
                 let v = self
                     .memory
                     .get_input_reg(index)
+                    .map_err(|e| ScanError::Memory(e.to_string()))?;
+                Ok(match bit {
+                    Some(b) => (v >> (b.min(15))) & 1 == 1,
+                    None => v != 0,
+                })
+            }
+            MemArea::MemoryBit => self
+                .memory
+                .get_memory_bit(index)
+                .map_err(|e| ScanError::Memory(e.to_string())),
+            MemArea::MemoryWord => {
+                let v = self
+                    .memory
+                    .get_memory_word(index)
                     .map_err(|e| ScanError::Memory(e.to_string()))?;
                 Ok(match bit {
                     Some(b) => (v >> (b.min(15))) & 1 == 1,
@@ -756,6 +772,28 @@ impl PlcEngine {
                         .map_err(|e| ScanError::Memory(e.to_string()))
                 }
             }
+            MemArea::MemoryBit => self
+                .memory
+                .set_memory_bit(index, value)
+                .map_err(|e| ScanError::Memory(e.to_string())),
+            MemArea::MemoryWord => {
+                if let Some(b) = bit {
+                    let b = b.min(15);
+                    let cur = self
+                        .memory
+                        .get_memory_word(index)
+                        .map_err(|e| ScanError::Memory(e.to_string()))?;
+                    let mask = 1u16 << b;
+                    let next = if value { cur | mask } else { cur & !mask };
+                    self.memory
+                        .set_memory_word(index, next)
+                        .map_err(|e| ScanError::Memory(e.to_string()))
+                } else {
+                    self.memory
+                        .set_memory_word(index, if value { 1 } else { 0 })
+                        .map_err(|e| ScanError::Memory(e.to_string()))
+                }
+            }
         }
     }
 
@@ -782,6 +820,17 @@ impl PlcEngine {
                 let b = input_image.discrete(index)?;
                 Ok(if b { 1 } else { 0 })
             }
+            MemArea::MemoryWord => self
+                .memory
+                .get_memory_word(index)
+                .map_err(|e| ScanError::Memory(e.to_string())),
+            MemArea::MemoryBit => {
+                let b = self
+                    .memory
+                    .get_memory_bit(index)
+                    .map_err(|e| ScanError::Memory(e.to_string()))?;
+                Ok(if b { 1 } else { 0 })
+            }
         }
     }
 
@@ -802,6 +851,14 @@ impl PlcEngine {
             MemArea::Discrete => self
                 .memory
                 .set_discrete(index, value != 0)
+                .map_err(|e| ScanError::Memory(e.to_string())),
+            MemArea::MemoryWord => self
+                .memory
+                .set_memory_word(index, value)
+                .map_err(|e| ScanError::Memory(e.to_string())),
+            MemArea::MemoryBit => self
+                .memory
+                .set_memory_bit(index, value != 0)
                 .map_err(|e| ScanError::Memory(e.to_string())),
         }
     }
@@ -919,6 +976,80 @@ mod tests {
         mem.set_discrete(1, true).unwrap(); // stop
         run_n(&eng, 2, 20);
         assert!(!mem.get_coil(0).unwrap(), "Q0 should drop on stop");
+    }
+
+    #[test]
+    fn internal_memory_bit_drives_coil() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+        let prog = single_rung_program(
+            "mbit",
+            vec![
+                LadderElement::ContactNo {
+                    id: "c0".into(),
+                    address: Address {
+                        area: MemArea::MemoryBit,
+                        index: 5,
+                        bit: None,
+                    },
+                },
+                LadderElement::Coil {
+                    id: "q0".into(),
+                    address: Address::coil(0),
+                },
+            ],
+        );
+        eng.load_program(compile(prog).unwrap());
+
+        mem.set_memory_bit(5, true).unwrap();
+        run_n(&eng, 1, 20);
+        assert!(mem.get_coil(0).unwrap(), "Q0 follows internal marker M5");
+
+        mem.set_memory_bit(5, false).unwrap();
+        run_n(&eng, 1, 20);
+        assert!(!mem.get_coil(0).unwrap(), "Q0 clears when M5 clears");
+    }
+
+    #[test]
+    fn internal_memory_register_moves_both_ways() {
+        let mem = PlcMemory::new().into_arc();
+        let eng = PlcEngine::new(Arc::clone(&mem));
+
+        // MR0 → R7 (read internal register as source)
+        let prog = single_rung_program(
+            "mr_read",
+            vec![LadderElement::Move {
+                id: "m".into(),
+                source: Address {
+                    area: MemArea::MemoryWord,
+                    index: 0,
+                    bit: None,
+                },
+                dest: Address::holding(7),
+            }],
+        );
+        eng.load_program(compile(prog).unwrap());
+        mem.set_memory_word(0, 4321).unwrap();
+        run_n(&eng, 1, 20);
+        assert_eq!(mem.get_holding(7).unwrap(), 4321, "MR0 usable as source");
+
+        // R8 → MR3 (write internal register as destination)
+        let prog2 = single_rung_program(
+            "mr_write",
+            vec![LadderElement::Move {
+                id: "m2".into(),
+                source: Address::holding(8),
+                dest: Address {
+                    area: MemArea::MemoryWord,
+                    index: 3,
+                    bit: None,
+                },
+            }],
+        );
+        eng.load_program(compile(prog2).unwrap());
+        mem.set_holding(8, 777).unwrap();
+        run_n(&eng, 1, 20);
+        assert_eq!(mem.get_memory_word(3).unwrap(), 777, "MR3 usable as dest");
     }
 
     #[test]
@@ -1482,11 +1613,13 @@ mod tests {
             *state
         }
         fn addr(r: &mut u64) -> Address {
-            let area = match lcg(r) % 4 {
+            let area = match lcg(r) % 6 {
                 0 => MemArea::Coil,
                 1 => MemArea::Discrete,
                 2 => MemArea::Holding,
-                _ => MemArea::InputReg,
+                3 => MemArea::InputReg,
+                4 => MemArea::MemoryBit,
+                _ => MemArea::MemoryWord,
             };
             // Range spans well beyond process-image bounds to exercise the
             // out-of-range → ScanError::Memory path without panicking.

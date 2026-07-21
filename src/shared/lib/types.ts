@@ -1,6 +1,12 @@
 /** Shared TypeScript types mirroring the Rust PLC API. */
 
-export type MemArea = "coil" | "discrete" | "holding" | "input_reg";
+export type MemArea =
+  | "coil"
+  | "discrete"
+  | "holding"
+  | "input_reg"
+  | "memory_bit"
+  | "memory_word";
 export type CmpOp = "eq" | "ne" | "gt" | "ge" | "lt" | "le";
 export type MathOp = "add" | "sub" | "mul" | "div";
 export type DataType = "bool" | "word" | "int" | "d_int";
@@ -105,6 +111,8 @@ export interface MemorySnapshot {
   discrete_inputs: boolean[];
   holding_registers: number[];
   input_registers: number[];
+  memory_bits: boolean[];
+  memory_words: number[];
   run_state: PlcRunState;
   scan_count: number;
   last_scan_us: number;

@@ -35,6 +35,8 @@ function emptyMemory(): MemorySnapshot {
     discrete_inputs: Array(64).fill(false),
     holding_registers: Array(64).fill(0),
     input_registers: Array(16).fill(0),
+    memory_bits: Array(64).fill(false),
+    memory_words: Array(64).fill(0),
     run_state: "stop",
     scan_count: 0,
     last_scan_us: 0,
@@ -214,6 +216,27 @@ class PlcStore {
       while (next.length <= addr) next.push(0);
       next[addr] = value;
       this.memory = { ...this.memory, holding_registers: next };
+    }
+  }
+
+  async toggleMemoryBit(addr: number) {
+    const cur = this.memory.memory_bits[addr] ?? false;
+    const res = await api.setMemoryBit(addr, !cur);
+    if (res.ok) {
+      const next = [...this.memory.memory_bits];
+      while (next.length <= addr) next.push(false);
+      next[addr] = !cur;
+      this.memory = { ...this.memory, memory_bits: next };
+    }
+  }
+
+  async setMemoryWord(addr: number, value: number) {
+    const res = await api.setMemoryWord(addr, value);
+    if (res.ok) {
+      const next = [...this.memory.memory_words];
+      while (next.length <= addr) next.push(0);
+      next[addr] = value;
+      this.memory = { ...this.memory, memory_words: next };
     }
   }
 

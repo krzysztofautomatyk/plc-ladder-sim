@@ -86,12 +86,9 @@
       const a = el.address;
       if (a.area === "discrete") prefix = "I";
       else if (a.area === "coil") prefix = "Q";
-      else if (a.bit != null) prefix = "R";
+      else if (a.area === "memory_bit") prefix = "M";
+      else if (a.area === "memory_word") prefix = "MR";
       else prefix = "R";
-      if (a.area === "holding" && a.bit != null) {
-        // Prefer showing as R1.x; user can switch to M
-        prefix = "R";
-      }
       index = a.index;
       bit = a.bit ?? 0;
       useBit = a.bit != null;
@@ -137,23 +134,19 @@
   function applyQuick() {
     const p = parseVarString(quick);
     if (!p) {
-      parseError = "Invalid address. Examples: I0, Q1, M2.3, R10, R1.5";
+      parseError = "Invalid address. Examples: I0, Q1, M2, MR5.3, R10, R1.5";
       return;
     }
     parseError = "";
-    prefix = p.prefix === "M" ? "M" : p.prefix;
-    // normalize M/R for holding
-    if (p.address.area === "holding") {
-      prefix = p.bit != null || p.prefix === "M" ? (p.prefix === "M" ? "M" : "R") : "R";
-    }
+    prefix = p.prefix;
     index = p.index;
     bit = p.bit ?? 0;
-    useBit = p.bit != null || p.prefix === "M";
+    useBit = p.bit != null;
     quick = p.display;
   }
 
   function primaryAddress(): Address {
-    return formToAddress(prefix, index, useBit ? bit : null, useBit || prefix === "M");
+    return formToAddress(prefix, index, useBit ? bit : null, useBit);
   }
 
   function mustParse(s: string, label: string): Address | null {
@@ -340,8 +333,9 @@
                   <select bind:value={prefix}>
                     <option value="I">I — Input</option>
                     <option value="Q">Q — Output</option>
-                    <option value="M">M — Memory bit</option>
-                    <option value="R">R — Register</option>
+                    <option value="M">M — Marker bit (internal)</option>
+                    <option value="MR">MR — Memory register (internal)</option>
+                    <option value="R">R — Register (Modbus)</option>
                   </select>
                 </label>
                 <label>
@@ -352,7 +346,7 @@
                   <input
                     type="checkbox"
                     bind:checked={useBit}
-                    disabled={prefix === "I" || prefix === "Q"}
+                    disabled={prefix === "I" || prefix === "Q" || prefix === "M"}
                   />
                   Bit (0–15)
                 </label>
@@ -363,7 +357,7 @@
                     min="0"
                     max="15"
                     bind:value={bit}
-                    disabled={!useBit && prefix !== "M"}
+                    disabled={!useBit}
                   />
                 </label>
               </div>

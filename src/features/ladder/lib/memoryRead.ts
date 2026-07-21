@@ -23,6 +23,15 @@ export function readMemoryBit(mem: MemorySnapshot | null | undefined, addr: Addr
       }
       return v !== 0;
     }
+    case "memory_bit":
+      return Boolean(mem.memory_bits?.[idx]);
+    case "memory_word": {
+      const v = mem.memory_words?.[idx] ?? 0;
+      if (addr.bit != null && addr.bit >= 0) {
+        return ((v >> (addr.bit & 15)) & 1) === 1;
+      }
+      return v !== 0;
+    }
     default:
       return false;
   }

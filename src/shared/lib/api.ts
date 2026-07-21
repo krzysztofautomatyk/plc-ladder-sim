@@ -84,6 +84,8 @@ function mockInvoke<T>(cmd: string, _args?: Record<string, unknown>): CommandRes
         discrete_inputs: Array(64).fill(false),
         holding_registers: Array(64).fill(0),
         input_registers: Array(16).fill(0),
+        memory_bits: Array(64).fill(false),
+        memory_words: Array(64).fill(0),
         run_state: "stop",
         scan_count: 0,
         last_scan_us: 0,
@@ -114,6 +116,10 @@ export const api = {
     invoke<boolean>("set_coil", { address, value }),
   setHolding: (address: number, value: number) =>
     invoke<number>("set_holding_register", { address, value }),
+  setMemoryBit: (address: number, value: boolean) =>
+    invoke<boolean>("set_memory_bit", { address, value }),
+  setMemoryWord: (address: number, value: number) =>
+    invoke<number>("set_memory_word", { address, value }),
   exportJson: () => invoke<string>("export_program_json"),
   importJson: (json: string) => invoke<ProgramInfo>("import_program_json", { json }),
   exportBytecode: () => invoke<string>("export_program_bytecode"),

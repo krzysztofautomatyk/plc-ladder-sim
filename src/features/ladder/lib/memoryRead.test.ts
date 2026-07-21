@@ -8,6 +8,8 @@ function mem(partial: Partial<MemorySnapshot>): MemorySnapshot {
     discrete_inputs: [],
     holding_registers: [],
     input_registers: [],
+    memory_bits: [],
+    memory_words: [],
     run_state: "stop",
     scan_count: 0,
     last_scan_us: 0,

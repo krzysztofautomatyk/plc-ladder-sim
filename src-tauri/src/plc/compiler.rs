@@ -16,6 +16,10 @@ pub enum MemArea {
     Discrete,
     Holding,
     InputReg,
+    /// Internal marker bit (M) — usable in ladder logic only, never on Modbus.
+    MemoryBit,
+    /// Internal memory register (MR) — usable in ladder logic only, never on Modbus.
+    MemoryWord,
 }
 
 /// Address reference used by contacts, coils, and function blocks.
@@ -912,11 +916,13 @@ mod tests {
     }
 
     fn rand_addr(r: &mut u64) -> Address {
-        let area = match lcg(r) % 4 {
+        let area = match lcg(r) % 6 {
             0 => MemArea::Coil,
             1 => MemArea::Discrete,
             2 => MemArea::Holding,
-            _ => MemArea::InputReg,
+            3 => MemArea::InputReg,
+            4 => MemArea::MemoryBit,
+            _ => MemArea::MemoryWord,
         };
         let index = (lcg(r) % 5000) as u16; // deliberately includes out-of-range
         let bit = if lcg(r) % 2 == 0 {

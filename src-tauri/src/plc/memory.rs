@@ -13,6 +13,10 @@ pub const COIL_COUNT: usize = 4096;
 pub const DISCRETE_INPUT_COUNT: usize = 4096;
 pub const HOLDING_REGISTER_COUNT: usize = 1024;
 pub const INPUT_REGISTER_COUNT: usize = 1024;
+/// Internal marker bits (M) — ladder-only, never exposed on Modbus.
+pub const MEMORY_BIT_COUNT: usize = 4096;
+/// Internal memory registers (MR) — ladder-only, never exposed on Modbus.
+pub const MEMORY_WORD_COUNT: usize = 1024;
 
 /// Runtime status exposed to UI / Modbus diagnostic registers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +35,10 @@ pub struct MemorySnapshot {
     pub discrete_inputs: Vec<bool>,
     pub holding_registers: Vec<u16>,
     pub input_registers: Vec<u16>,
+    #[serde(default)]
+    pub memory_bits: Vec<bool>,
+    #[serde(default)]
+    pub memory_words: Vec<u16>,
     pub run_state: PlcRunState,
     pub scan_count: u64,
     pub last_scan_us: u64,
@@ -56,6 +64,10 @@ pub struct PlcMemory {
     holding_registers: parking_lot::RwLock<Vec<u16>>,
     /// Input registers (Modbus FC 04) — diagnostics / scan metrics.
     input_registers: parking_lot::RwLock<Vec<u16>>,
+    /// Internal marker bits (M) — ladder-only working memory, never on Modbus.
+    memory_bits: parking_lot::RwLock<Vec<bool>>,
+    /// Internal memory registers (MR) — ladder-only working memory, never on Modbus.
+    memory_words: parking_lot::RwLock<Vec<u16>>,
 
     run_state: parking_lot::RwLock<PlcRunState>,
     scan_count: AtomicU64,
@@ -83,6 +95,8 @@ impl PlcMemory {
             discrete_inputs: parking_lot::RwLock::new(vec![false; DISCRETE_INPUT_COUNT]),
             holding_registers: parking_lot::RwLock::new(vec![0u16; HOLDING_REGISTER_COUNT]),
             input_registers: parking_lot::RwLock::new(vec![0u16; INPUT_REGISTER_COUNT]),
+            memory_bits: parking_lot::RwLock::new(vec![false; MEMORY_BIT_COUNT]),
+            memory_words: parking_lot::RwLock::new(vec![0u16; MEMORY_WORD_COUNT]),
             run_state: parking_lot::RwLock::new(PlcRunState::Stop),
             scan_count: AtomicU64::new(0),
             last_scan_us: AtomicU64::new(0),
@@ -193,6 +207,54 @@ impl PlcMemory {
     }
 
     // -------------------------------------------------------------------------
+    // Internal memory bits (M) — ladder-only, never on Modbus
+    // -------------------------------------------------------------------------
+
+    pub fn get_memory_bit(&self, addr: u16) -> Result<bool, MemoryError> {
+        let m = self.memory_bits.read();
+        m.get(addr as usize)
+            .copied()
+            .ok_or(MemoryError::OutOfRange {
+                area: "memory_bit",
+                addr,
+            })
+    }
+
+    pub fn set_memory_bit(&self, addr: u16, value: bool) -> Result<(), MemoryError> {
+        let mut m = self.memory_bits.write();
+        let slot = m.get_mut(addr as usize).ok_or(MemoryError::OutOfRange {
+            area: "memory_bit",
+            addr,
+        })?;
+        *slot = value;
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // Internal memory registers (MR) — ladder-only, never on Modbus
+    // -------------------------------------------------------------------------
+
+    pub fn get_memory_word(&self, addr: u16) -> Result<u16, MemoryError> {
+        let m = self.memory_words.read();
+        m.get(addr as usize)
+            .copied()
+            .ok_or(MemoryError::OutOfRange {
+                area: "memory_word",
+                addr,
+            })
+    }
+
+    pub fn set_memory_word(&self, addr: u16, value: u16) -> Result<(), MemoryError> {
+        let mut m = self.memory_words.write();
+        let slot = m.get_mut(addr as usize).ok_or(MemoryError::OutOfRange {
+            area: "memory_word",
+            addr,
+        })?;
+        *slot = value;
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
     // Runtime metadata
     // -------------------------------------------------------------------------
 
@@ -294,6 +356,14 @@ impl PlcMemory {
             let mut i = self.input_registers.write();
             i.fill(0);
         }
+        {
+            let mut m = self.memory_bits.write();
+            m.fill(false);
+        }
+        {
+            let mut m = self.memory_words.write();
+            m.fill(0);
+        }
         self.scan_count.store(0, Ordering::Relaxed);
         self.last_scan_us.store(0, Ordering::Relaxed);
         self.clear_fault();
@@ -312,11 +382,15 @@ impl PlcMemory {
         let discrete_inputs = self.discrete_inputs.read();
         let holding_registers = self.holding_registers.read();
         let input_registers = self.input_registers.read();
+        let memory_bits = self.memory_bits.read();
+        let memory_words = self.memory_words.read();
         MemorySnapshot {
             coils: coils.clone(),
             discrete_inputs: discrete_inputs.clone(),
             holding_registers: holding_registers.clone(),
             input_registers: input_registers.clone(),
+            memory_bits: memory_bits.clone(),
+            memory_words: memory_words.clone(),
             run_state: self.run_state(),
             scan_count: self.scan_count(),
             last_scan_us: self.last_scan_us(),
@@ -340,6 +414,8 @@ impl PlcMemory {
                 .into_iter()
                 .take(reg_n.min(16))
                 .collect(),
+            memory_bits: full.memory_bits.into_iter().take(coil_n).collect(),
+            memory_words: full.memory_words.into_iter().take(reg_n).collect(),
             ..full
         }
     }

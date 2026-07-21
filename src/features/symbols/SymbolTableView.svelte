@@ -22,6 +22,10 @@
         return `MW${index}`;
       case "input_reg":
         return `IW${index}`;
+      case "memory_bit":
+        return `M${index}`;
+      case "memory_word":
+        return `MR${index}`;
     }
   }
 
@@ -47,7 +51,8 @@
   function onAreaChange(r: PlcSymbol, area: MemArea) {
     r.area = area;
     r.address_display = displayFor(area, r.index);
-    r.data_type = area === "holding" || area === "input_reg" ? "word" : "bool";
+    r.data_type =
+      area === "holding" || area === "input_reg" || area === "memory_word" ? "word" : "bool";
     rows = [...rows];
   }
 
@@ -119,6 +124,8 @@
                 <option value="coil">Q (Output)</option>
                 <option value="holding">MW (Memory)</option>
                 <option value="input_reg">IW (Input word)</option>
+                <option value="memory_bit">M (Marker · internal)</option>
+                <option value="memory_word">MR (Register · internal)</option>
               </select>
             </td>
             <td>

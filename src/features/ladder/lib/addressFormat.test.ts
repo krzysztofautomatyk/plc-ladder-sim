@@ -13,6 +13,9 @@ describe("formatAddress", () => {
     expect(formatAddress({ area: "coil", index: 3 })).toBe("Q3");
     expect(formatAddress({ area: "holding", index: 10 })).toBe("R10");
     expect(formatAddress({ area: "input_reg", index: 4 })).toBe("IW4");
+    expect(formatAddress({ area: "memory_bit", index: 5 })).toBe("M5");
+    expect(formatAddress({ area: "memory_word", index: 2 })).toBe("MR2");
+    expect(formatAddress({ area: "memory_word", index: 2, bit: 3 })).toBe("MR2.3");
   });
 
   it("includes the bit when present", () => {
@@ -30,14 +33,16 @@ describe("prefix / area mapping", () => {
   it("maps prefixes to areas", () => {
     expect(prefixToArea("I")).toBe("discrete");
     expect(prefixToArea("Q")).toBe("coil");
-    expect(prefixToArea("M")).toBe("holding");
+    expect(prefixToArea("M")).toBe("memory_bit");
+    expect(prefixToArea("MR")).toBe("memory_word");
     expect(prefixToArea("R")).toBe("holding");
   });
 
   it("maps areas back to prefixes", () => {
     expect(areaToPrefix("discrete", false)).toBe("I");
     expect(areaToPrefix("coil", false)).toBe("Q");
-    expect(areaToPrefix("holding", true)).toBe("M");
+    expect(areaToPrefix("memory_bit", false)).toBe("M");
+    expect(areaToPrefix("memory_word", true)).toBe("MR");
     expect(areaToPrefix("holding", false)).toBe("R");
   });
 });
@@ -70,10 +75,19 @@ describe("parseVarString", () => {
     expect(mw?.display).toBe("R20");
   });
 
-  it("treats a bare M marker as bit 0 of a holding word", () => {
+  it("treats a bare M marker as an internal marker bit (never Modbus)", () => {
     const m = parseVarString("M5");
-    expect(m?.address.area).toBe("holding");
-    expect(m?.address.bit).toBe(0);
+    expect(m?.address).toEqual({ area: "memory_bit", index: 5 });
+    expect(m?.display).toBe("M5");
+  });
+
+  it("parses internal memory registers MR and MR.bit", () => {
+    expect(parseVarString("MR20")?.address).toEqual({ area: "memory_word", index: 20 });
+    expect(parseVarString("MR1.5")?.address).toEqual({
+      area: "memory_word",
+      index: 1,
+      bit: 5,
+    });
   });
 
   it("rejects invalid input", () => {
@@ -109,11 +123,22 @@ describe("formToAddress", () => {
     });
   });
 
-  it("forces a bit for M markers", () => {
+  it("builds a bitless internal marker for M", () => {
     expect(formToAddress("M", 5, 2, false)).toEqual({
-      area: "holding",
+      area: "memory_bit",
       index: 5,
-      bit: 2,
+    });
+  });
+
+  it("supports bit access on internal registers MR", () => {
+    expect(formToAddress("MR", 3, 7, false)).toEqual({
+      area: "memory_word",
+      index: 3,
+      bit: 7,
+    });
+    expect(formToAddress("MR", 3, null, false)).toEqual({
+      area: "memory_word",
+      index: 3,
     });
   });
 });
