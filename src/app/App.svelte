@@ -16,6 +16,7 @@
   import ModbusConfigView from "../features/modbus/ModbusConfigView.svelte";
   import MathHelpView from "../features/docs/MathHelpView.svelte";
   import AuditPanel from "../features/audit/AuditPanel.svelte";
+  import LogsView from "../features/diagnostics/LogsView.svelte";
 
   let fileInput: HTMLInputElement | undefined = $state();
   let treeOpen = $state(true);
@@ -46,6 +47,7 @@
     { id: "math", label: "Math operations", ico: "∑", group: "PLC data" },
     { id: "modbus", label: "Modbus TCP", ico: "⇄", group: "Device config" },
     { id: "audit", label: "Audit trail", ico: "📋", group: "Diagnostics" },
+    { id: "logs", label: "Logs", ico: "🗎", group: "Diagnostics" },
   ];
 </script>
 
@@ -201,6 +203,8 @@
           <div style="height:100%;background:#fff">
             <AuditPanel />
           </div>
+        {:else if plc.view === "logs"}
+          <LogsView />
         {/if}
       </div>
     </main>

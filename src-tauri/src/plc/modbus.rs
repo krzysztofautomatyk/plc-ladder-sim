@@ -10,14 +10,14 @@ use serde::Serialize;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_modbus::prelude::*;
 use tokio_modbus::server::tcp::{accept_tcp_connection, Server};
 use tokio_modbus::server::Service;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub const DEFAULT_MODBUS_PORT: u16 = 5020;
 pub const DEFAULT_MODBUS_BIND: &str = "127.0.0.1";
@@ -55,7 +55,21 @@ impl Service for PlcModbusService {
     fn call(&self, req: Self::Request) -> Self::Future {
         let memory = Arc::clone(&self.memory);
         let map = Arc::clone(&self.map);
-        Box::pin(async move { handle_request(&memory, &map, req) })
+        Box::pin(async move {
+            let started = std::time::Instant::now();
+            let summary = describe_request(&req);
+            let result = handle_request(&memory, &map, req);
+            let elapsed_us = started.elapsed().as_micros() as u64;
+            match &result {
+                Ok(_) => {
+                    debug!(target: "modbus", request = %summary, elapsed_us, "request served")
+                }
+                Err(e) => {
+                    warn!(target: "modbus", request = %summary, exception = ?e, elapsed_us, "request rejected")
+                }
+            }
+            result
+        })
     }
 }
 
@@ -162,6 +176,27 @@ fn write_reg_mapped(
         MemArea::Discrete => memory
             .set_discrete(idx, value != 0)
             .map_err(|_| ExceptionCode::IllegalDataAddress),
+    }
+}
+
+/// Human-readable one-line summary of a Modbus request for logging.
+fn describe_request(req: &Request<'static>) -> String {
+    match req {
+        Request::ReadCoils(a, q) => format!("ReadCoils(FC01) addr={a} qty={q}"),
+        Request::ReadDiscreteInputs(a, q) => format!("ReadDiscreteInputs(FC02) addr={a} qty={q}"),
+        Request::ReadHoldingRegisters(a, q) => {
+            format!("ReadHoldingRegisters(FC03) addr={a} qty={q}")
+        }
+        Request::ReadInputRegisters(a, q) => format!("ReadInputRegisters(FC04) addr={a} qty={q}"),
+        Request::WriteSingleCoil(a, v) => format!("WriteSingleCoil(FC05) addr={a} val={v}"),
+        Request::WriteSingleRegister(a, v) => format!("WriteSingleRegister(FC06) addr={a} val={v}"),
+        Request::WriteMultipleCoils(a, v) => {
+            format!("WriteMultipleCoils(FC15) addr={a} qty={}", v.len())
+        }
+        Request::WriteMultipleRegisters(a, v) => {
+            format!("WriteMultipleRegisters(FC16) addr={a} qty={}", v.len())
+        }
+        other => format!("{other:?}"),
     }
 }
 
@@ -284,6 +319,70 @@ fn handle_request(
     }
 }
 
+/// Bind the listener, retrying briefly on `AddrInUse` (WSAEADDRINUSE / os error 10048).
+///
+/// On Windows a port held by a just-closed listener stays unbindable for ~1–3 s and
+/// `SO_REUSEADDR` is intentionally not used (it would allow socket hijacking), so a
+/// stop→start / port-change cycle can otherwise fail to rebind. Retrying with a short
+/// backoff makes the restart deterministic without weakening socket security.
+async fn bind_with_retry(
+    addr: SocketAddr,
+    port: u16,
+    attempts: u32,
+) -> std::io::Result<TcpListener> {
+    let mut last: Option<std::io::Error> = None;
+    for attempt in 1..=attempts {
+        match TcpListener::bind(addr).await {
+            Ok(listener) => {
+                if attempt > 1 {
+                    info!(target: "modbus", %port, attempt, "bind succeeded after retry");
+                }
+                return Ok(listener);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                warn!(target: "modbus", %port, attempt, error = %e,
+                    "port busy (os error 10048), retrying in 200ms");
+                last = Some(e);
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::AddrInUse, "bind failed")))
+}
+
+/// Run the Modbus TCP serve loop until `shutdown` fires. Extracted so it can be
+/// driven directly from an integration test over a real loopback socket.
+async fn run_server(
+    listener: TcpListener,
+    memory: Arc<PlcMemory>,
+    map: Arc<ModbusMap>,
+    shutdown: oneshot::Receiver<()>,
+) {
+    let server = Server::new(listener);
+    let on_connected = move |stream, socket_addr| {
+        let mem = Arc::clone(&memory);
+        let map = Arc::clone(&map);
+        async move {
+            info!(target: "modbus", %socket_addr, "client connected");
+            let service = PlcModbusService { memory: mem, map };
+            accept_tcp_connection(stream, socket_addr, move |_addr| Ok(Some(service.clone())))
+        }
+    };
+    tokio::select! {
+        res = server.serve(&on_connected, |err| {
+            warn!(target: "modbus", error = %err, "client processing error / disconnect");
+        }) => {
+            if let Err(e) = res {
+                error!(target: "modbus", error = %e, "server loop error");
+            }
+        }
+        _ = shutdown => {
+            info!(target: "modbus", "shutdown signal received");
+        }
+    }
+}
+
 /// Controllable Modbus TCP server (enable/disable, port change).
 pub struct ModbusController {
     memory: Arc<PlcMemory>,
@@ -291,6 +390,8 @@ pub struct ModbusController {
     port: AtomicU16,
     enabled: AtomicBool,
     running: AtomicBool,
+    /// Generation counter: only the current server task may mutate `running`.
+    epoch: AtomicU64,
     last_error: Mutex<String>,
     /// oneshot sender to stop current server
     stop_tx: Mutex<Option<oneshot::Sender<()>>>,
@@ -304,6 +405,7 @@ impl ModbusController {
             port: AtomicU16::new(DEFAULT_MODBUS_PORT),
             enabled: AtomicBool::new(false),
             running: AtomicBool::new(false),
+            epoch: AtomicU64::new(0),
             last_error: Mutex::new(String::new()),
             stop_tx: Mutex::new(None),
         })
@@ -353,11 +455,13 @@ impl ModbusController {
     }
 
     fn stop_internal(&self) {
+        // Invalidate the current task so its exit cannot clobber a later start.
+        self.epoch.fetch_add(1, Ordering::SeqCst);
         if let Some(tx) = self.stop_tx.lock().take() {
             let _ = tx.send(());
         }
         self.running.store(false, Ordering::SeqCst);
-        info!("Modbus TCP stopped");
+        info!(target: "modbus", "Modbus TCP stop requested");
     }
 
     fn start_internal(self: &Arc<Self>) -> Result<(), String> {
@@ -368,6 +472,7 @@ impl ModbusController {
         let (tx, rx) = oneshot::channel::<()>();
         *self.stop_tx.lock() = Some(tx);
 
+        let my_epoch = self.epoch.fetch_add(1, Ordering::SeqCst) + 1;
         let memory = Arc::clone(&self.memory);
         let map = Arc::clone(&self.map);
         let this = Arc::clone(self);
@@ -376,57 +481,44 @@ impl ModbusController {
             let addr: SocketAddr = match format!("{DEFAULT_MODBUS_BIND}:{port}").parse() {
                 Ok(a) => a,
                 Err(e) => {
+                    error!(target: "modbus", error = %e, %port, "invalid bind address");
                     *this.last_error.lock() = e.to_string();
-                    this.running.store(false, Ordering::SeqCst);
+                    if this.epoch.load(Ordering::SeqCst) == my_epoch {
+                        this.running.store(false, Ordering::SeqCst);
+                    }
                     return;
                 }
             };
 
-            let listener = match TcpListener::bind(addr).await {
+            // Retry on WSAEADDRINUSE so a stop→start / port change rebinds cleanly.
+            let listener = match bind_with_retry(addr, port, 20).await {
                 Ok(l) => l,
                 Err(e) => {
-                    error!(error = %e, %port, "Modbus bind failed");
+                    error!(target: "modbus", error = %e, %port,
+                        "bind failed after retries (port busy or blocked)");
                     *this.last_error.lock() = format!("bind {port}: {e}");
-                    this.running.store(false, Ordering::SeqCst);
+                    if this.epoch.load(Ordering::SeqCst) == my_epoch {
+                        this.running.store(false, Ordering::SeqCst);
+                    }
                     return;
                 }
             };
 
-            this.running.store(true, Ordering::SeqCst);
-            *this.last_error.lock() = String::new();
-            info!(%addr, "Modbus TCP slave listening");
-
-            let server = Server::new(listener);
-            let on_connected = move |stream, socket_addr| {
-                let mem = Arc::clone(&memory);
-                let map = Arc::clone(&map);
-                async move {
-                    info!(%socket_addr, "Modbus client connected");
-                    let service = PlcModbusService { memory: mem, map };
-                    accept_tcp_connection(stream, socket_addr, move |_addr| {
-                        Ok(Some(service.clone()))
-                    })
-                }
-            };
-
-            tokio::select! {
-                res = server.serve(&on_connected, |err| {
-                    error!(error = %err, "Modbus connection error");
-                }) => {
-                    if let Err(e) = res {
-                        error!(error = %e, "Modbus server error");
-                        *this.last_error.lock() = e.to_string();
-                    }
-                }
-
-                _ = rx => {
-                    info!("Modbus server abort signal received");
-                }
+            if this.epoch.load(Ordering::SeqCst) == my_epoch {
+                this.running.store(true, Ordering::SeqCst);
+                *this.last_error.lock() = String::new();
             }
-            this.running.store(false, Ordering::SeqCst);
+            info!(target: "modbus", %addr, "Modbus TCP slave listening");
+
+            run_server(listener, memory, map, rx).await;
+
+            if this.epoch.load(Ordering::SeqCst) == my_epoch {
+                this.running.store(false, Ordering::SeqCst);
+            }
+            info!(target: "modbus", %port, "Modbus TCP slave stopped");
         });
 
-        // Brief yield for bind result
+        // Brief yield so an immediate bind error can be reported synchronously.
         std::thread::sleep(std::time::Duration::from_millis(50));
         if !self.running.load(Ordering::SeqCst) {
             let err = self.last_error.lock().clone();
@@ -441,6 +533,48 @@ impl ModbusController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn server_answers_read_holding_over_real_socket() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpStream;
+
+        let memory = PlcMemory::new().into_arc();
+        memory.set_holding(41, 0x1234).unwrap();
+        let map = ModbusMap::new();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = oneshot::channel();
+        let handle = tokio::spawn(run_server(listener, memory, map, rx));
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        // MBAP: txn=1 proto=0 len=6 unit=1 | PDU: FC=0x03 addr=41(0x0029) qty=1
+        let req = [
+            0x00u8, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x29, 0x00, 0x01,
+        ];
+        stream.write_all(&req).await.unwrap();
+
+        // Response = 7-byte MBAP + FC + byte-count + 2 data bytes = 11 bytes.
+        let mut resp = [0u8; 11];
+        stream.read_exact(&mut resp).await.unwrap();
+        assert_eq!(resp[7], 0x03, "function code echoed");
+        assert_eq!(resp[8], 0x02, "byte count = 2");
+        assert_eq!(u16::from_be_bytes([resp[9], resp[10]]), 0x1234);
+
+        let _ = tx.send(());
+        let _ = handle.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rebind_same_port_succeeds_after_stop() {
+        // Bind an ephemeral port, learn its number, drop it, then rebind via the helper.
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+        let listener = bind_with_retry(addr, addr.port(), 20).await.unwrap();
+        assert_eq!(listener.local_addr().unwrap().port(), addr.port());
+    }
 
     #[test]
     fn write_requests_require_explicit_enable() {

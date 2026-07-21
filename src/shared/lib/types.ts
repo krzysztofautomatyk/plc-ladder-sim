@@ -214,7 +214,16 @@ export interface ModbusMapSnapshot {
   identity_fallback: boolean;
 }
 
-export type AppView = "ladder" | "tags" | "modbus" | "math" | "audit" | "watch";
+export interface LogEntry {
+  seq: number;
+  ts: string;
+  level: string;
+  target: string;
+  message: string;
+  fields: string;
+}
+
+export type AppView = "ladder" | "tags" | "modbus" | "math" | "audit" | "watch" | "logs";
 
 export type PaletteKind =
   | "contact_no"

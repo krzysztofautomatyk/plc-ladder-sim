@@ -5,6 +5,7 @@
 
 mod audit;
 mod commands;
+mod logbuf;
 mod plc;
 
 use audit::AuditTrail;
@@ -28,6 +29,7 @@ pub fn run() {
     tracing_subscriber::registry()
         .with(filter)
         .with(fmt::layer().with_target(true).with_thread_ids(true))
+        .with(logbuf::layer())
         .init();
 
     info!("PLC Ladder Simulator Pro starting");
@@ -119,6 +121,8 @@ pub fn run() {
             commands::set_modbus_write_enabled,
             commands::get_modbus_map,
             commands::set_modbus_map,
+            commands::get_logs,
+            commands::clear_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running PLC Ladder Simulator Pro");

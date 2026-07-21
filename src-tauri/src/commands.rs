@@ -527,6 +527,23 @@ pub fn set_modbus_map(
     CommandResult::ok(state.modbus.map().snapshot())
 }
 
+// ─── Diagnostics / logs ─────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_logs(
+    limit: Option<usize>,
+    level: Option<String>,
+) -> CommandResult<Vec<crate::logbuf::LogEntry>> {
+    let limit = limit.unwrap_or(500).min(5_000);
+    let level = level.unwrap_or_else(|| "trace".to_string());
+    CommandResult::ok(crate::logbuf::snapshot(limit, &level))
+}
+
+#[tauri::command]
+pub fn clear_logs() -> CommandResult<usize> {
+    CommandResult::ok(crate::logbuf::clear())
+}
+
 fn current_status(state: &AppState) -> SimStatus {
     let mb = state.modbus.status();
     SimStatus {

@@ -18,6 +18,7 @@ import type {
   AppView,
   LadderElement,
   LadderProgram,
+  LogEntry,
   MemorySnapshot,
   ModbusMapSnapshot,
   ModbusStatus,
@@ -82,6 +83,7 @@ class PlcStore {
     last_error: "",
   });
   modbusMap = $state<ModbusMapSnapshot>({ entries: [], identity_fallback: true });
+  logs = $state<LogEntry[]>([]);
 
   /** Element property dialog target */
   editingElement = $state<LadderElement | null>(null);
@@ -238,6 +240,16 @@ class PlcStore {
     const [st, map] = await Promise.all([api.getModbusStatus(), api.getModbusMap()]);
     if (st.ok && st.data) this.modbus = st.data;
     if (map.ok && map.data) this.modbusMap = map.data;
+  }
+
+  async refreshLogs(limit = 500, level = "trace") {
+    const res = await api.getLogs(limit, level);
+    if (res.ok && res.data) this.logs = res.data;
+  }
+
+  async clearLogs() {
+    const res = await api.clearLogs();
+    if (res.ok) this.logs = [];
   }
 
   async startModbus() {

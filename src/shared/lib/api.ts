@@ -6,6 +6,7 @@ import type {
   AuditReport,
   CommandResult,
   LadderProgram,
+  LogEntry,
   MemorySnapshot,
   ModbusMapSnapshot,
   ModbusStatus,
@@ -69,6 +70,12 @@ function mockInvoke<T>(cmd: string, _args?: Record<string, unknown>): CommandRes
   if (cmd === "get_modbus_map") {
     return { ok: true, data: { entries: [], identity_fallback: true } as T };
   }
+  if (cmd === "get_logs") {
+    return { ok: true, data: [] as T };
+  }
+  if (cmd === "clear_logs") {
+    return { ok: true, data: 0 as T };
+  }
   if (cmd === "get_memory_snapshot") {
     return {
       ok: true,
@@ -131,6 +138,9 @@ export const api = {
   getModbusMap: () => invoke<ModbusMapSnapshot>("get_modbus_map"),
   setModbusMap: (map: ModbusMapSnapshot) =>
     invoke<ModbusMapSnapshot>("set_modbus_map", { map }),
+  getLogs: (limit = 500, level = "trace") =>
+    invoke<LogEntry[]>("get_logs", { limit, level }),
+  clearLogs: () => invoke<number>("clear_logs"),
 };
 
 export async function listenScanTick(
