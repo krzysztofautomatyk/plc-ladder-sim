@@ -231,6 +231,23 @@ export interface LogEntry {
   fields: string;
 }
 
+export interface MemoryConfig {
+  inputs: number;
+  outputs: number;
+  markers: number;
+  data16: number;
+  data32: number;
+  internal16: number;
+  timers: number;
+  counters: number;
+}
+
+export interface MemoryConfigInfo {
+  config: MemoryConfig;
+  limits: MemoryConfig;
+  register_pool: number;
+}
+
 export type AppView =
   | "ladder"
   | "tags"
@@ -239,7 +256,8 @@ export type AppView =
   | "audit"
   | "watch"
   | "logs"
-  | "memory";
+  | "memory"
+  | "alloc";
 
 export type PaletteKind =
   | "contact_no"

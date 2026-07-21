@@ -11,12 +11,12 @@ use std::sync::Arc;
 /// Default process-image sizes (IEC-style addressable ranges).
 pub const COIL_COUNT: usize = 4096;
 pub const DISCRETE_INPUT_COUNT: usize = 4096;
-pub const HOLDING_REGISTER_COUNT: usize = 1024;
+pub const HOLDING_REGISTER_COUNT: usize = 4096;
 pub const INPUT_REGISTER_COUNT: usize = 1024;
 /// Internal marker bits (M) — ladder-only, never exposed on Modbus.
 pub const MEMORY_BIT_COUNT: usize = 4096;
 /// Internal memory registers (MR) — ladder-only, never exposed on Modbus.
-pub const MEMORY_WORD_COUNT: usize = 1024;
+pub const MEMORY_WORD_COUNT: usize = 4096;
 
 /// Runtime status exposed to UI / Modbus diagnostic registers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

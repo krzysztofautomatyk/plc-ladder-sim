@@ -44,6 +44,7 @@ pub fn run() {
             let map = ModbusMap::new();
             let modbus = ModbusController::new(Arc::clone(&memory), Arc::clone(&map));
             let symbols = SymbolTable::new();
+            let mem_config = plc::memconfig::MemoryConfigStore::new();
 
             if let Ok(dir) = app.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(&dir);
@@ -85,6 +86,7 @@ pub fn run() {
                 audit,
                 modbus,
                 symbols,
+                mem_config,
             });
 
             Ok(())
@@ -125,6 +127,8 @@ pub fn run() {
             commands::set_modbus_map,
             commands::get_logs,
             commands::clear_logs,
+            commands::get_memory_config,
+            commands::set_memory_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running PLC Ladder Simulator Pro");

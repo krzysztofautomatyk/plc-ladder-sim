@@ -7,6 +7,8 @@ import type {
   CommandResult,
   LadderProgram,
   LogEntry,
+  MemoryConfig,
+  MemoryConfigInfo,
   MemorySnapshot,
   ModbusMapSnapshot,
   ModbusStatus,
@@ -75,6 +77,12 @@ function mockInvoke<T>(cmd: string, _args?: Record<string, unknown>): CommandRes
   }
   if (cmd === "clear_logs") {
     return { ok: true, data: 0 as T };
+  }
+  if (cmd === "get_memory_config" || cmd === "set_memory_config") {
+    const def = { inputs: 128, outputs: 128, markers: 1024, data16: 1024, data32: 0, internal16: 1024, timers: 64, counters: 64 };
+    const lim = { inputs: 4096, outputs: 4096, markers: 4096, data16: 4096, data32: 2048, internal16: 4096, timers: 256, counters: 256 };
+    const config = (cmd === "set_memory_config" && _args?.config) || def;
+    return { ok: true, data: { config, limits: lim, register_pool: 4096 } as T };
   }
   if (cmd === "get_memory_snapshot") {
     return {
@@ -147,6 +155,9 @@ export const api = {
   getLogs: (limit = 500, level = "trace") =>
     invoke<LogEntry[]>("get_logs", { limit, level }),
   clearLogs: () => invoke<number>("clear_logs"),
+  getMemoryConfig: () => invoke<MemoryConfigInfo>("get_memory_config"),
+  setMemoryConfig: (config: MemoryConfig) =>
+    invoke<MemoryConfigInfo>("set_memory_config", { config }),
 };
 
 export async function listenScanTick(

@@ -2,6 +2,7 @@
 
 pub mod compiler;
 pub mod engine;
+pub mod memconfig;
 pub mod memory;
 pub mod modbus;
 pub mod modbus_map;

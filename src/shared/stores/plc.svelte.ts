@@ -19,6 +19,7 @@ import type {
   LadderElement,
   LadderProgram,
   LogEntry,
+  MemoryConfig,
   MemorySnapshot,
   ModbusMapSnapshot,
   ModbusStatus,
@@ -86,6 +87,27 @@ class PlcStore {
   });
   modbusMap = $state<ModbusMapSnapshot>({ entries: [], identity_fallback: true });
   logs = $state<LogEntry[]>([]);
+  memoryConfig = $state<MemoryConfig>({
+    inputs: 128,
+    outputs: 128,
+    markers: 1024,
+    data16: 1024,
+    data32: 0,
+    internal16: 1024,
+    timers: 64,
+    counters: 64,
+  });
+  memoryLimits = $state<MemoryConfig>({
+    inputs: 4096,
+    outputs: 4096,
+    markers: 4096,
+    data16: 4096,
+    data32: 2048,
+    internal16: 4096,
+    timers: 256,
+    counters: 256,
+  });
+  registerPool = $state(4096);
 
   /** Element property dialog target */
   editingElement = $state<LadderElement | null>(null);
@@ -113,6 +135,7 @@ class PlcStore {
 
     await this.refreshSymbols();
     await this.refreshModbus();
+    await this.refreshMemoryConfig();
 
     this.unsubs.push(
       await listenScanTick((payload) => {
@@ -273,6 +296,28 @@ class PlcStore {
   async clearLogs() {
     const res = await api.clearLogs();
     if (res.ok) this.logs = [];
+  }
+
+  async refreshMemoryConfig() {
+    const res = await api.getMemoryConfig();
+    if (res.ok && res.data) {
+      this.memoryConfig = res.data.config;
+      this.memoryLimits = res.data.limits;
+      this.registerPool = res.data.register_pool;
+    }
+  }
+
+  async saveMemoryConfig(config: MemoryConfig): Promise<string | null> {
+    const res = await api.setMemoryConfig(config);
+    if (res.ok && res.data) {
+      this.memoryConfig = res.data.config;
+      this.memoryLimits = res.data.limits;
+      this.registerPool = res.data.register_pool;
+      this.message = "Memory allocation saved";
+      return null;
+    }
+    this.message = res.error ?? "save memory allocation failed";
+    return res.error ?? "save failed";
   }
 
   async startModbus() {

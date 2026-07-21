@@ -23,6 +23,7 @@ pub struct AppState {
     pub audit: Arc<AuditTrail>,
     pub modbus: Arc<ModbusController>,
     pub symbols: Arc<SymbolTable>,
+    pub mem_config: Arc<crate::plc::memconfig::MemoryConfigStore>,
 }
 
 #[derive(Debug, Serialize)]
@@ -564,6 +565,44 @@ pub fn get_logs(
 #[tauri::command]
 pub fn clear_logs() -> CommandResult<usize> {
     CommandResult::ok(crate::logbuf::clear())
+}
+
+// ─── Memory allocation ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_memory_config(
+    state: State<'_, AppState>,
+) -> CommandResult<crate::plc::memconfig::MemoryConfigInfo> {
+    CommandResult::ok(state.mem_config.info())
+}
+
+#[tauri::command]
+pub fn set_memory_config(
+    state: State<'_, AppState>,
+    config: crate::plc::memconfig::MemoryConfig,
+) -> CommandResult<crate::plc::memconfig::MemoryConfigInfo> {
+    match state.mem_config.set(config) {
+        Ok(()) => {
+            state.audit.record(
+                "operator",
+                "MEMORY_CONFIG_SET",
+                format!(
+                    "I={} Q={} M={} R16={} R32={} MR={} T={} C={}",
+                    config.inputs,
+                    config.outputs,
+                    config.markers,
+                    config.data16,
+                    config.data32,
+                    config.internal16,
+                    config.timers,
+                    config.counters
+                ),
+                state.memory.program_hash(),
+            );
+            CommandResult::ok(state.mem_config.info())
+        }
+        Err(e) => CommandResult::err(e),
+    }
 }
 
 fn current_status(state: &AppState) -> SimStatus {

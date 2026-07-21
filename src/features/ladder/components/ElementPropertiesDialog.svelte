@@ -2,7 +2,8 @@
   /**
    * Dialog: assign I / Q / M / R / R1.x variables to ladder element.
    */
-  import type { Address, CmpOp, LadderElement, MathOp } from "../../../shared/lib/types";
+  import type { Address, CmpOp, LadderElement, MathOp, MemArea } from "../../../shared/lib/types";
+  import { plc } from "../../../shared/stores/plc.svelte";
   import type { ElementType } from "../elements/_shared/types";
   import {
     ADDRESS_HELP_MD,
@@ -149,10 +150,41 @@
     return formToAddress(prefix, index, useBit ? bit : null, useBit);
   }
 
+  function allocLimit(area: MemArea): number | null {
+    const c = plc.memoryConfig;
+    switch (area) {
+      case "discrete":
+        return c.inputs;
+      case "coil":
+        return c.outputs;
+      case "memory_bit":
+        return c.markers;
+      case "holding":
+        return c.data16;
+      case "memory_word":
+        return c.internal16;
+      default:
+        return null; // input_reg: not allocation-bounded
+    }
+  }
+
+  function allocError(a: Address): string | null {
+    const lim = allocLimit(a.area);
+    if (lim != null && a.index >= lim) {
+      return `${formatAddress(a)} is outside the allocated range (0–${Math.max(0, lim - 1)}). Raise it in Memory allocation.`;
+    }
+    return null;
+  }
+
   function mustParse(s: string, label: string): Address | null {
     const p = parseVarString(s);
     if (!p) {
       parseError = `Invalid address (${label}): ${s}`;
+      return null;
+    }
+    const e = allocError(p.address);
+    if (e) {
+      parseError = `${label}: ${e}`;
       return null;
     }
     return p.address;
@@ -163,12 +195,22 @@
     let next: LadderElement = { ...element } as LadderElement;
 
     if (isBit && "address" in next) {
+      const primary = primaryAddress();
+      const e = allocError(primary);
+      if (e) {
+        parseError = e;
+        return;
+      }
       next = {
         type: selectedType,
         id: element.id,
-        address: primaryAddress(),
+        address: primary,
       } as LadderElement;
     } else if (isTimer && (next.type === "ton" || next.type === "tof" || next.type === "rto")) {
+      if (timerIndex >= plc.memoryConfig.timers) {
+        parseError = `Timer T${timerIndex} exceeds allocation (0–${Math.max(0, plc.memoryConfig.timers - 1)}). Raise Timers in Memory allocation.`;
+        return;
+      }
       const done = mustParse(addrDone, "done");
       if (!done) return;
       next = {
@@ -183,6 +225,10 @@
         next = { ...next, reset_address: rst };
       }
     } else if (next.type === "ctu") {
+      if (counterIndex >= plc.memoryConfig.counters) {
+        parseError = `Counter C${counterIndex} exceeds allocation (0–${Math.max(0, plc.memoryConfig.counters - 1)}). Raise Counters in Memory allocation.`;
+        return;
+      }
       const done = mustParse(addrDone, "done");
       const rst = mustParse(addrReset, "reset");
       if (!done || !rst) return;
@@ -194,6 +240,10 @@
         reset_address: rst,
       };
     } else if (next.type === "ctd") {
+      if (counterIndex >= plc.memoryConfig.counters) {
+        parseError = `Counter C${counterIndex} exceeds allocation (0–${Math.max(0, plc.memoryConfig.counters - 1)}). Raise Counters in Memory allocation.`;
+        return;
+      }
       const done = mustParse(addrDone, "done");
       const ld = mustParse(addrReset, "load");
       if (!done || !ld) return;

@@ -18,6 +18,7 @@
   import AuditPanel from "../features/audit/AuditPanel.svelte";
   import LogsView from "../features/diagnostics/LogsView.svelte";
   import MemoryView from "../features/memory/MemoryView.svelte";
+  import MemoryAllocationView from "../features/memory/MemoryAllocationView.svelte";
 
   let fileInput: HTMLInputElement | undefined = $state();
   let treeOpen = $state(true);
@@ -46,6 +47,7 @@
     { id: "ladder", label: "Main [OB1]", ico: "▦", group: "Program blocks" },
     { id: "tags", label: "PLC tags", ico: "☰", group: "PLC data" },
     { id: "memory", label: "Memory (M/MR)", ico: "▧", group: "PLC data" },
+    { id: "alloc", label: "Memory allocation", ico: "▤", group: "PLC data" },
     { id: "math", label: "Math operations", ico: "∑", group: "PLC data" },
     { id: "modbus", label: "Modbus TCP", ico: "⇄", group: "Device config" },
     { id: "audit", label: "Audit trail", ico: "📋", group: "Diagnostics" },
@@ -199,6 +201,8 @@
           <SymbolTableView />
         {:else if plc.view === "memory"}
           <MemoryView />
+        {:else if plc.view === "alloc"}
+          <MemoryAllocationView />
         {:else if plc.view === "modbus"}
           <ModbusConfigView />
         {:else if plc.view === "math"}
