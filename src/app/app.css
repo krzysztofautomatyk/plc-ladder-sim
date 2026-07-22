@@ -329,8 +329,23 @@ textarea:focus {
 .tia-center-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* Child views (LadderEditor, Memory, …) own their scroll — keep toolbars fixed */
+  overflow: hidden;
   background: var(--tia-paper);
+  display: flex;
+  flex-direction: column;
+}
+
+.tia-center-body > * {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+
+/* Ladder: only the network canvas scrolls; OB1 + insert strip stay fixed */
+.tia-center-body > :global(.editor-root) {
+  overflow: hidden;
 }
 
 .tia-right {

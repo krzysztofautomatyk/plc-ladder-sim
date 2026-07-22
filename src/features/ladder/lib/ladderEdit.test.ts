@@ -5,6 +5,8 @@ import {
   insertBeforeCoils,
   isCoilNode,
   makeParallelGroup,
+  moveInOrBranch,
+  moveNodeById,
   removeNodeById,
   removeParallelBranch,
   updateNodeById,
@@ -57,6 +59,33 @@ describe("updateNodeById", () => {
     const group = out[0];
     if (group.type !== "parallel") throw new Error("expected group");
     expect(group.branches[1][0]).toMatchObject({ id: "c", address: { index: 9 } });
+  });
+});
+
+describe("moveNodeById", () => {
+  it("swaps neighbors left/right within the contact rail", () => {
+    const nodes = [contact("a"), contact("b"), coil("q")];
+    const right = moveNodeById(nodes, "a", 1);
+    expect(right.map((n) => n.id)).toEqual(["b", "a", "q"]);
+    const left = moveNodeById(right, "a", -1);
+    expect(left.map((n) => n.id)).toEqual(["a", "b", "q"]);
+  });
+
+  it("does not move a contact into the coil rail", () => {
+    const nodes = [contact("a"), coil("q")];
+    expect(moveNodeById(nodes, "a", 1).map((n) => n.id)).toEqual(["a", "q"]);
+  });
+});
+
+describe("moveInOrBranch", () => {
+  it("reorders elements inside an OR branch", () => {
+    const branches = [
+      [contact("a"), contact("b")],
+      [contact("c")],
+    ];
+    const out = moveInOrBranch(branches, 0, "a", 1);
+    expect(out[0].map((e) => e.id)).toEqual(["b", "a"]);
+    expect(out[1].map((e) => e.id)).toEqual(["c"]);
   });
 });
 

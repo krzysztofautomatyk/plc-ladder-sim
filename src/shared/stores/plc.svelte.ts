@@ -3,6 +3,11 @@
  */
 import { api, listenFault, listenMemory, listenScanTick } from "../lib/api";
 import { createDemoProgram, uid } from "../lib/demoProgram";
+import {
+  createWaterTankProgram,
+  createWaterTankSymbols,
+  WATER_TANK_MEMORY_SEED,
+} from "../lib/waterTankProgram";
 import { createElement } from "../../features/ladder/elements";
 import {
   addParallelBranch,
@@ -13,8 +18,15 @@ import {
   removeParallelBranch as removeParallelBranchOp,
   updateNodeById,
 } from "../../features/ladder/lib/ladderEdit";
+import {
+  canMoveInRung,
+  findInRung,
+  moveInRung,
+  type MoveDir,
+} from "../../features/ladder/lib/ladderMove";
 import { SvelteSet } from "svelte/reactivity";
 import type {
+  Address,
   AppView,
   LadderElement,
   LadderProgram,
@@ -31,14 +43,14 @@ import type {
 } from "../lib/types";
 
 function emptyMemory(): MemorySnapshot {
-  // Match backend COMPACT_* sizes so watch/demo R40 are always in range before first poll.
+  // Match backend COMPACT_* sizes (R0…R255 for live MOVE/math/cmp on water-tank).
   return {
     coils: Array(256).fill(false),
     discrete_inputs: Array(256).fill(false),
-    holding_registers: Array(128).fill(0),
+    holding_registers: Array(256).fill(0),
     input_registers: Array(32).fill(0),
     memory_bits: Array(256).fill(false),
-    memory_words: Array(128).fill(0),
+    memory_words: Array(256).fill(0),
     timer_et: Array(256).fill(0),
     timer_q: Array(256).fill(false),
     counter_cv: Array(256).fill(0),
@@ -65,7 +77,8 @@ function syncSet(target: SvelteSet<string>, values: string[]): void {
 }
 
 class PlcStore {
-  program = $state<LadderProgram>(createDemoProgram());
+  /** Default project: dual-pump wet-well (not the small 4-rung demo). */
+  program = $state<LadderProgram>(createWaterTankProgram());
   memory = $state<MemorySnapshot>(emptyMemory());
   status = $state<SimStatus | null>(null);
   // Reactive sets: a single SvelteSet instance mutated in place keeps power-flow
@@ -133,12 +146,12 @@ class PlcStore {
       this.status = st.data;
       this.cycleMs = st.data.cycle_ms;
     }
-    const prog = await api.getProgram();
-    if (prog.ok && prog.data) {
-      this.program = normalizeProgram(prog.data);
-    } else {
-      await this.pushProgram();
-    }
+
+    // Always bring up the dual-pump wet-well as the working project so the
+    // canvas is never left on the tiny Demo_Start_Stop after a cold start.
+    // (User can still switch via toolbar "Demo".)
+    await this.loadWaterTank();
+
     const mem = await api.getMemory(true);
     if (mem.ok && mem.data) this.memory = mem.data;
 
@@ -393,6 +406,65 @@ class PlcStore {
     }
   }
 
+  /**
+   * Dual-pump wet-well project + process-image seeds.
+   * Always switches UI to ladder and replaces Demo_Start_Stop.
+   * See docs/WATER_TANK_PUMP_STATION.md
+   */
+  async loadWaterTank() {
+    this.busy = true;
+    this.view = "ladder";
+    this.message = "Loading Water_Tank_Dual_Pump…";
+    try {
+      if (this.status?.running || this.status?.run_state === "run") {
+        await this.stop();
+      }
+      // Fresh object so Svelte 5 always re-renders the canvas (38 networks).
+      const prog = normalizeProgram(createWaterTankProgram());
+      this.program = prog;
+      this.selectedRungId = prog.rungs[0]?.id ?? null;
+      this.selectedBranch = null;
+      this.selectedParallel = null;
+      this.activeElements.clear();
+      this.activeRungs.clear();
+
+      const res = await api.updateProgram(prog);
+      if (!res.ok) {
+        this.message = `Water tank COMPILE ERROR: ${res.error ?? "update_program failed"}`;
+        this.busy = false;
+        return;
+      }
+
+      await this.seedWaterTankMemory();
+      const tags = createWaterTankSymbols();
+      const symRes = await api.setSymbols(tags);
+      if (symRes.ok && symRes.data) this.symbols = symRes.data.symbols;
+      else this.symbols = tags;
+      this.message = `Water_Tank_Dual_Pump · ${prog.rungs.length} nets · hysteresis 200/700/800 cm · I0=SIM`;
+    } catch (e) {
+      this.message = `Water tank load failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Seed holdings/discretes for the wet-well simulation (safe after reset). */
+  async seedWaterTankMemory() {
+    for (const [addr, val] of Object.entries(WATER_TANK_MEMORY_SEED.holdings)) {
+      await this.setHolding(Number(addr), val);
+    }
+    for (const [addr, val] of Object.entries(WATER_TANK_MEMORY_SEED.discretes)) {
+      const a = Number(addr);
+      const r = await api.setDiscrete(a, val);
+      if (r.ok) {
+        const next = [...this.memory.discrete_inputs];
+        while (next.length <= a) next.push(false);
+        next[a] = val;
+        this.memory = { ...this.memory, discrete_inputs: next };
+      }
+    }
+  }
+
   async refreshProgramFromBackend() {
     const prog = await api.getProgram();
     if (prog.ok && prog.data) this.program = normalizeProgram(prog.data);
@@ -602,6 +674,72 @@ class PlcStore {
     };
   }
 
+  /**
+   * Unified ladder move (left/right/up/down) — matches canvas layout:
+   *   [leading OR] → [series / inline parallel] → [coils]
+   *
+   * Hints: selected OR/∥ branch receives an element that enters from series.
+   */
+  moveInRung(rungId: string, elementId: string, dir: MoveDir) {
+    // null = no branch selected → new bottom OR row; number = AND into that row
+    const opts = {
+      orBranchHint: this.selectedBranch,
+      parBranchHint: this.selectedParallel?.branch ?? null,
+      parGroupHint: this.selectedParallel?.groupId ?? null,
+    };
+    this.program = {
+      ...this.program,
+      rungs: this.program.rungs.map((r) => {
+        if (r.id !== rungId) return r;
+        const rr = ensureOr(r);
+        const before = { elements: rr.elements, or_branches: rr.or_branches };
+        const moved = moveInRung(rr.elements, rr.or_branches, elementId, dir, opts);
+        if (!moved) return r;
+        const changed =
+          JSON.stringify(moved.elements) !== JSON.stringify(before.elements) ||
+          JSON.stringify(moved.or_branches) !== JSON.stringify(before.or_branches);
+        if (changed) {
+          const from = findInRung(before.elements, before.or_branches, elementId)?.kind;
+          const to = findInRung(moved.elements, moved.or_branches, elementId)?.kind;
+          if (from && to && from !== to) {
+            if (to === "or") {
+              this.message =
+                this.selectedBranch != null
+                  ? `→ AND into OR branch ${this.selectedBranch}`
+                  : "→ new OR branch at bottom (click a branch first for AND)";
+            } else if (to === "par") {
+              this.message =
+                this.selectedParallel != null
+                  ? `→ AND into ∥ branch ${this.selectedParallel.branch}`
+                  : "→ new ∥ branch at bottom (click a branch first for AND)";
+            } else if (from === "or") {
+              this.message = "Exited OR → series";
+            } else if (from === "par") {
+              this.message = "Exited parallel ∥ → series";
+            } else {
+              this.message = `Moved ${dir}`;
+            }
+          } else {
+            this.message = `Moved ${dir}`;
+          }
+        }
+        return { ...rr, elements: moved.elements, or_branches: moved.or_branches };
+      }),
+    };
+  }
+
+  /** Whether a direction is available for the element (for button enable state). */
+  canMoveInRung(rungId: string, elementId: string, dir: MoveDir): boolean {
+    const r = this.program.rungs.find((x) => x.id === rungId);
+    if (!r) return false;
+    const rr = ensureOr(r);
+    return canMoveInRung(rr.elements, rr.or_branches, elementId, dir, {
+      orBranchHint: this.selectedBranch,
+      parBranchHint: this.selectedParallel?.branch ?? null,
+      parGroupHint: this.selectedParallel?.groupId ?? null,
+    });
+  }
+
   updateElement(rungId: string, element: LadderElement) {
     this.program = {
       ...this.program,
@@ -616,6 +754,24 @@ class PlcStore {
   openElementEditor(rungId: string, element: LadderElement, orBranch: number | null = null) {
     this.editingRungId = rungId;
     this.editingOrBranch = orBranch;
+    this.selectedRungId = rungId;
+    // Selecting the branch while editing makes the next insert/move do AND into it
+    if (orBranch != null) {
+      this.selectedBranch = orBranch;
+      this.selectedParallel = null;
+    } else {
+      const r = this.program.rungs.find((x) => x.id === rungId);
+      if (r) {
+        const loc = findInRung(r.elements ?? [], r.or_branches ?? [], element.id);
+        if (loc?.kind === "or") {
+          this.selectedBranch = loc.branch;
+          this.selectedParallel = null;
+        } else if (loc?.kind === "par") {
+          this.selectedBranch = null;
+          this.selectedParallel = { groupId: loc.groupId, branch: loc.branch };
+        }
+      }
+    }
     try {
       this.editingElement = JSON.parse(JSON.stringify(element)) as LadderElement;
     } catch {
@@ -645,9 +801,47 @@ class PlcStore {
     void this.pushProgram();
   }
 
-  /** Symbolic 10-char label shown next to an element (stored in program metadata). */
+  /** Per-element override label from program metadata (max 10). */
   labelFor(id: string): string {
     return this.program.metadata?.[`lbl:${id}`] ?? "";
+  }
+
+  /**
+   * Label shown above a ladder element (max 10 chars):
+   * 1) manual override in program metadata (`lbl:<id>`)
+   * 2) PLC tag `name` for the element's primary address
+   */
+  labelForElement(el: {
+    id: string;
+    type: string;
+    address?: Address;
+    done_address?: Address | null;
+    source?: Address;
+    dest?: Address;
+    a?: Address;
+  }): string {
+    const override = this.labelFor(el.id).trim();
+    if (override) return override.slice(0, 10);
+    const addr = this.resolveLabelAddress(el);
+    if (!addr) return "";
+    const sym = this.symbols.find((s) => s.area === addr.area && s.index === addr.index);
+    return (sym?.name ?? "").trim().slice(0, 10);
+  }
+
+  private resolveLabelAddress(el: {
+    type: string;
+    address?: Address;
+    done_address?: Address | null;
+    source?: Address;
+    dest?: Address;
+    a?: Address;
+  }): Address | null {
+    if (el.address) return el.address;
+    if (el.type === "move" && el.dest) return el.dest;
+    if ((el.type === "math" || el.type === "compare") && el.a) return el.a;
+    if (el.done_address) return el.done_address;
+    if (el.dest) return el.dest;
+    return null;
   }
 
   setElementLabel(id: string, label: string) {
@@ -699,10 +893,11 @@ class PlcStore {
   get insertTargetLabel(): string {
     const i = this.selectedRungIndex;
     if (i < 0) return "new network";
-    if (this.selectedParallel) return `Network ${i} · ∥${this.selectedParallel.branch}`;
+    if (this.selectedParallel)
+      return `Network ${i} · ∥${this.selectedParallel.branch} (AND)`;
     return this.selectedBranch != null
-      ? `Network ${i} · OR${this.selectedBranch}`
-      : `Network ${i}`;
+      ? `Network ${i} · OR${this.selectedBranch} (AND)`
+      : `Network ${i} · series`;
   }
 
   /** Return the target rung id, creating + selecting a network when none exists. */

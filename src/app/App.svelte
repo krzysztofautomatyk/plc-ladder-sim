@@ -5,12 +5,8 @@
    */
   import { onMount } from "svelte";
   import { plc } from "../shared/stores/plc.svelte";
-  import type { AppView, PaletteKind } from "../shared/lib/types";
-  import {
-    ElementPalette,
-    ElementPropertiesDialog,
-    LadderEditor,
-  } from "../features/ladder";
+  import type { AppView } from "../shared/lib/types";
+  import { ElementPropertiesDialog, LadderEditor } from "../features/ladder";
   import WatchPanel from "../features/watch/WatchPanel.svelte";
   import SymbolTableView from "../features/symbols/SymbolTableView.svelte";
   import ModbusConfigView from "../features/modbus/ModbusConfigView.svelte";
@@ -22,7 +18,6 @@
 
   let fileInput: HTMLInputElement | undefined = $state();
   let treeOpen = $state(true);
-  let instrOpen = $state(true);
 
   onMount(() => {
     plc.init();
@@ -31,10 +26,6 @@
 
   const runState = $derived(plc.status?.run_state ?? "stop");
   const running = $derived(runState === "run" || plc.status?.running === true);
-
-  function onPaletteAdd(kind: PaletteKind) {
-    plc.insertInstruction(kind);
-  }
 
   async function onFile(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
@@ -53,12 +44,15 @@
     { id: "audit", label: "Audit trail", ico: "📋", group: "Diagnostics" },
     { id: "logs", label: "Logs", ico: "🗎", group: "Diagnostics" },
   ];
+
+  const programTitle = $derived(plc.program.name);
+  const networkCount = $derived(plc.program.rungs.length);
 </script>
 
 <div class="tia-shell">
   <div class="tia-menubar">
     <div class="brand">PLC Ladder Simulator <span>TIA-style</span></div>
-    <button type="button" onclick={() => plc.loadDemo()}>Project</button>
+    <button type="button" onclick={() => plc.loadWaterTank()}>Project</button>
     <button type="button" onclick={() => plc.pushProgram()}>Edit</button>
     <button type="button" onclick={() => (running ? plc.stop() : plc.start())}>Online</button>
     <button type="button" onclick={() => plc.setView("modbus")}>Tools</button>
@@ -98,7 +92,20 @@
       MB {plc.modbus.running ? "ON" : "OFF"} :{plc.modbus.port}
     </span>
     <div class="sep"></div>
-    <button type="button" class="tia-btn" onclick={() => plc.loadDemo()}>Demo</button>
+    <button
+      type="button"
+      class="tia-btn tia-btn-primary"
+      title="Load dual-pump wet-well (38 networks) — primary project"
+      disabled={plc.busy}
+      onclick={() => plc.loadWaterTank()}>Water tank ({networkCount})</button
+    >
+    <button
+      type="button"
+      class="tia-btn"
+      title="Small 4-network IEC demo"
+      disabled={plc.busy}
+      onclick={() => plc.loadDemo()}>Demo</button
+    >
     <button type="button" class="tia-btn" onclick={() => plc.exportJson()}>Export</button>
     <button type="button" class="tia-btn" onclick={() => fileInput?.click()}>Import</button>
     <button type="button" class="tia-btn" onclick={() => plc.resetMemory()}>Reset I/O</button>
@@ -127,6 +134,27 @@
           >
         </div>
         <div class="tia-tree-group">PLC_1</div>
+        <div class="tia-tree-group">Programs</div>
+        <button
+          type="button"
+          class="tia-tree-item"
+          class:active={plc.view === "ladder" && programTitle.includes("Water")}
+          title="Dual-pump wet-well station"
+          onclick={() => plc.loadWaterTank()}
+        >
+          <span class="ico">💧</span>
+          Water_Tank_Dual_Pump
+        </button>
+        <button
+          type="button"
+          class="tia-tree-item"
+          class:active={plc.view === "ladder" && programTitle.includes("Demo")}
+          title="Small start/stop demo"
+          onclick={() => plc.loadDemo()}
+        >
+          <span class="ico">▦</span>
+          Demo_Start_Stop
+        </button>
         {#each nav as item, i}
           {#if item.group && (i === 0 || nav[i - 1].group !== item.group)}
             <div class="tia-tree-group">{item.group}</div>
@@ -134,7 +162,7 @@
           <button
             type="button"
             class="tia-tree-item"
-            class:active={plc.view === item.id}
+            class:active={plc.view === item.id && item.id !== "ladder"}
             onclick={() => plc.setView(item.id)}
           >
             <span class="ico">{item.ico}</span>
@@ -167,36 +195,7 @@
       </div>
       <div class="tia-center-body">
         {#if plc.view === "ladder"}
-          <div
-            style="display:grid;grid-template-columns:{instrOpen
-              ? '160px'
-              : '32px'} 1fr;height:100%"
-          >
-            <div
-              style="border-right:1px solid var(--tia-border);overflow:auto;background:var(--tia-panel)"
-            >
-              {#if instrOpen}
-                <div class="section-label panel-head">
-                  <span>Instructions</span>
-                  <button
-                    type="button"
-                    class="collapse-btn"
-                    title="Hide instructions"
-                    onclick={() => (instrOpen = false)}>◀</button
-                  >
-                </div>
-                <ElementPalette onAdd={onPaletteAdd} />
-              {:else}
-                <button
-                  type="button"
-                  class="expand-strip"
-                  title="Show instructions"
-                  onclick={() => (instrOpen = true)}>▶ Instructions</button
-                >
-              {/if}
-            </div>
-            <LadderEditor />
-          </div>
+          <LadderEditor />
         {:else if plc.view === "tags"}
           <SymbolTableView />
         {:else if plc.view === "memory"}

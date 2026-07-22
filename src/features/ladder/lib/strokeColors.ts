@@ -20,17 +20,28 @@ export function resolveStrokes(opts: {
 }): GlyphStrokes {
   const { active, powerIn, energized, isCoil } = opts;
   const inLit = powerIn || active;
+  // Contacts: only green power-flow (never blue stubs/poles).
+  // Coils: blue when the output bit is ON in the process image.
   return {
     strokeIn: inLit ? COL_GREEN : COL_OFF,
-    strokeOut: energized && isCoil ? COL_BLUE : active ? COL_GREEN : COL_OFF,
-    strokeBody:
-      energized && isCoil
+    strokeOut: isCoil
+      ? energized
         ? COL_BLUE
         : active
           ? COL_GREEN
-          : energized
-            ? COL_BLUE
-            : COL_OFF,
+          : COL_OFF
+      : active
+        ? COL_GREEN
+        : COL_OFF,
+    strokeBody: isCoil
+      ? energized
+        ? COL_BLUE
+        : active
+          ? COL_GREEN
+          : COL_OFF
+      : active
+        ? COL_GREEN
+        : COL_OFF,
     fillCoil: energized && isCoil ? "rgba(21, 101, 192, 0.18)" : "none",
     sw: 2,
   };

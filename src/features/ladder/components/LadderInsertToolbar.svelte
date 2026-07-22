@@ -137,6 +137,8 @@
     background: linear-gradient(180deg, #eef3f7, #dde5eb);
     border-bottom: 1px solid #9aa3ab;
     flex-shrink: 0;
+    z-index: 6;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   }
   .target {
     font-size: 11px;

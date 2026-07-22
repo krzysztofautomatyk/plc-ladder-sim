@@ -19,21 +19,18 @@
     seriesPowerOut,
     splitRungElements,
   } from "../lib/ladderLayout";
+  import type { MoveDir } from "../lib/ladderMove";
 
   interface Props {
     rung: RungType;
     networkNo: number;
     selected: boolean;
-    /** Which OR branch is the current insert target (null = main series). */
     selectedBranch?: number | null;
-    /** Which inline parallel-group branch is the current insert target. */
     selectedParallel?: { groupId: string; branch: number } | null;
     active: boolean;
     isElementActive: (id: string) => boolean;
-    /** Live bit state for blue SET/coil highlight */
     isEnergized?: (addr: Address) => boolean;
-    /** Symbolic label lookup for an element id. */
-    labelFor?: (id: string) => string;
+    labelFor?: (id: string, el?: LadderElement) => string;
     online?: boolean;
     onSelect: () => void;
     onSelectBranch: (branchIdx: number) => void;
@@ -45,6 +42,9 @@
     onComment: (c: string) => void;
     onAddKind: (kind: PaletteKind) => void;
     onRemoveElement: (id: string) => void;
+    /** Unified move: left | right | up | down */
+    onMove: (id: string, dir: MoveDir) => void;
+    canMove: (id: string, dir: MoveDir) => boolean;
     onChangeElement: (el: LadderElement) => void;
     onAddOrBranch: () => void;
     onRemoveOrBranch: (branchIdx: number) => void;
@@ -75,6 +75,8 @@
     onComment,
     onAddKind,
     onRemoveElement,
+    onMove,
+    canMove,
     onChangeElement,
     onAddOrBranch,
     onRemoveOrBranch,
@@ -83,6 +85,20 @@
     onChangeOrElement,
     onEditElement,
   }: Props = $props();
+
+  /** Build move handlers — re-evaluated each render against live canMove. */
+  function moveProps(id: string) {
+    const left = canMove(id, "left");
+    const right = canMove(id, "right");
+    const up = canMove(id, "up");
+    const down = canMove(id, "down");
+    return {
+      onMoveLeft: left ? () => onMove(id, "left") : undefined,
+      onMoveRight: right ? () => onMove(id, "right") : undefined,
+      onMoveUp: up ? () => onMove(id, "up") : undefined,
+      onMoveDown: down ? () => onMove(id, "down") : undefined,
+    };
+  }
 
   const split = $derived(splitRungElements(rung.elements ?? []));
 
@@ -149,17 +165,31 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 <div
   class="net"
   class:selected
   class:online={active || anyActive}
   ondrop={onDrop}
   ondragover={onDragOver}
+  onclick={onSelect}
   role="group"
+  aria-label={`Network ${networkNo}${selected ? " (selected)" : ""}`}
 >
-  <header class="hdr">
-    <button type="button" class="badge" aria-pressed={selected} onclick={onSelect}>
+  <header class="hdr" class:selected>
+    <button
+      type="button"
+      class="badge"
+      class:selected
+      aria-pressed={selected}
+      onclick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+      title="Selected network — insert target"
+    >
       Network {networkNo}
+      {#if selected}<span class="sel-mark">●</span>{/if}
     </button>
     <input
       class="title"
@@ -213,24 +243,20 @@
                 <div class="par-rows">
                   {#each rung.or_branches as branch, bi (bi)}
                     {@const bActive = branch.some((e) => isElementActive(e.id))}
+                    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
                     <div
                       class="par-row"
                       class:sel={selectedBranch === bi}
                       ondrop={(e) => onBranchDrop(e, bi)}
                       ondragover={onDragOver}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        onSelectBranch(bi);
+                      }}
                       role="group"
-                      aria-label={`OR branch ${bi}`}
+                      aria-label={`OR branch ${bi + 1}`}
+                      title="Click to select this OR branch"
                     >
-                      <button
-                        type="button"
-                        class="branch-tab"
-                        class:sel={selectedBranch === bi}
-                        title="Select this OR branch as insert target"
-                        onclick={(e) => {
-                          e.stopPropagation();
-                          onSelectBranch(bi);
-                        }}>OR{bi}</button
-                      >
                       <i class="seg jin" class:hot={online || bActive}></i>
                       {#each branch as el, ei (el.id)}
                         {#if ei > 0}
@@ -238,12 +264,13 @@
                         {/if}
                         <LadderElementHost
                           element={el}
-                          label={labelFor(el.id)}
+                          label={labelFor(el.id, el)}
                           active={isElementActive(el.id)}
                           powerIn={online && pin(branch, ei)}
                           energized={energ(el)}
                           compact
                           onRemove={() => onRemoveFromOrBranch(bi, el.id)}
+                          {...moveProps(el.id)}
                           onChange={(e) => onChangeOrElement(bi, e)}
                           onEdit={() => onEditElement(el, bi)}
                         />
@@ -252,15 +279,17 @@
                         class="seg jout"
                         class:hot={branch.length ? pout(branch, branch.length - 1) : false}
                       ></i>
-                      <button
-                        type="button"
-                        class="btn tiny rm"
-                        title="Remove branch"
-                        onclick={(e) => {
-                          e.stopPropagation();
-                          onRemoveOrBranch(bi);
-                        }}>✕</button
-                      >
+                      {#if (rung.or_branches?.length ?? 0) > 1}
+                        <button
+                          type="button"
+                          class="btn tiny rm branch-rm"
+                          title="Remove this OR branch"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            onRemoveOrBranch(bi);
+                          }}>×</button
+                        >
+                      {/if}
                     </div>
                   {/each}
                 </div>
@@ -283,17 +312,16 @@
                         !!selectedParallel &&
                         selectedParallel.groupId === node.id &&
                         selectedParallel.branch === bi}
-                      <div class="par-row" class:sel={psel}>
-                        <button
-                          type="button"
-                          class="branch-tab"
-                          class:sel={psel}
-                          title="Select this parallel branch as insert target"
-                          onclick={(e) => {
-                            e.stopPropagation();
-                            onSelectParallelBranch(node.id, bi);
-                          }}>∥{bi}</button
-                        >
+                      <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+                      <div
+                        class="par-row"
+                        class:sel={psel}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          onSelectParallelBranch(node.id, bi);
+                        }}
+                        title="Click to select parallel branch"
+                      >
                         <i class="seg jin" class:hot={pfeed}></i>
                         {#each branch as el, ci (el.id)}
                           {#if ci > 0}
@@ -301,12 +329,13 @@
                           {/if}
                           <LadderElementHost
                             element={el}
-                            label={labelFor(el.id)}
+                            label={labelFor(el.id, el)}
                             active={isElementActive(el.id)}
                             powerIn={pfeed && (ci === 0 || isElementActive(branch[ci - 1].id))}
                             energized={energ(el)}
                             compact
                             onRemove={() => onRemoveElement(el.id)}
+                            {...moveProps(el.id)}
                             onChange={onChangeElement}
                             onEdit={() => onEditElement(el, null)}
                           />
@@ -317,15 +346,17 @@
                             ? isElementActive(branch[branch.length - 1].id)
                             : false}
                         ></i>
-                        <button
-                          type="button"
-                          class="btn tiny rm"
-                          title="Remove this branch"
-                          onclick={(e) => {
-                            e.stopPropagation();
-                            onRemoveParallelBranch(node.id, bi);
-                          }}>✕</button
-                        >
+                        {#if node.branches.length > 1}
+                          <button
+                            type="button"
+                            class="btn tiny rm branch-rm"
+                            title="Remove this branch"
+                            onclick={(e) => {
+                              e.stopPropagation();
+                              onRemoveParallelBranch(node.id, bi);
+                            }}>×</button
+                          >
+                        {/if}
                       </div>
                     {/each}
                     <button
@@ -343,11 +374,12 @@
               {:else}
                 <LadderElementHost
                   element={node}
-                  label={labelFor(node.id)}
+                  label={labelFor(node.id, node)}
                   active={isElementActive(node.id)}
                   powerIn={ei === 0 ? feedLeft : online && pin(split.left, ei)}
                   energized={energ(node)}
                   onRemove={() => onRemoveElement(node.id)}
+                  {...moveProps(node.id)}
                   onChange={onChangeElement}
                   onEdit={() => onEditElement(node, null)}
                 />
@@ -368,11 +400,12 @@
                     <i class="seg coil-in" class:hot={feedCoils}></i>
                     <LadderElementHost
                       element={el}
-                      label={labelFor(el.id)}
+                      label={labelFor(el.id, el)}
                       active={isElementActive(el.id)}
                       powerIn={feedCoils}
                       energized={energ(el)}
                       onRemove={() => onRemoveElement(el.id)}
+                      {...moveProps(el.id)}
                       onChange={onChangeElement}
                       onEdit={() => onEditElement(el, null)}
                     />
@@ -403,13 +436,25 @@
     background: #fff;
     border: 1px solid #a0a8b0;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    cursor: pointer;
+    transition:
+      border-color 0.12s ease,
+      box-shadow 0.12s ease;
   }
-  .net.selected {
-    border-color: #0078a8;
-    box-shadow: 0 0 0 1px #0078a8;
+  .net:hover:not(.selected) {
+    border-color: #7a8a9a;
   }
-  .net.online {
+  /* Power-flow green — only when not the insert-target network */
+  .net.online:not(.selected) {
     border-color: #5aad7a;
+  }
+  /* Active editing target — high-contrast amber frame (beats online green) */
+  .net.selected {
+    border: 2px solid #e67e22;
+    box-shadow:
+      0 0 0 2px rgba(230, 126, 34, 0.35),
+      0 2px 8px rgba(230, 126, 34, 0.2);
+    background: #fffdf8;
   }
 
   .hdr {
@@ -419,6 +464,10 @@
     padding: 4px 8px;
     background: linear-gradient(180deg, #eef2f6, #e0e6eb);
     border-bottom: 1px solid #c0c7ce;
+  }
+  .hdr.selected {
+    background: linear-gradient(180deg, #ffe8cc, #ffd9a8);
+    border-bottom-color: #e67e22;
   }
   .badge {
     border: 0;
@@ -430,6 +479,18 @@
     border-radius: 2px;
     flex-shrink: 0;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .badge.selected {
+    background: linear-gradient(180deg, #f39c12, #d35400);
+    box-shadow: 0 0 0 1px #a04000;
+  }
+  .sel-mark {
+    font-size: 8px;
+    line-height: 1;
+    opacity: 0.95;
   }
   .badge:focus-visible {
     outline: 2px solid #003d5c;
@@ -539,25 +600,30 @@
     padding: 0 2px;
   }
 
-  /* Wire segments — single 2px stroke */
+  /* Wire segments — continuous 2px power bus between cells */
   .seg {
     display: block;
-    width: 14px;
+    width: 16px;
     height: 2px;
     background: #1a1a1a;
     flex-shrink: 0;
     align-self: center;
+    /* slight overdraw removes 1px hairline gaps at flex joins */
+    margin: 0 -0.5px;
   }
   .seg.s0 {
-    width: 12px;
+    width: 14px;
+    margin-left: 0;
   }
   .seg.s1 {
-    width: 12px;
+    width: 14px;
+    margin-right: 0;
   }
   .seg.grow {
     flex: 1 1 auto;
     min-width: 40px;
     width: auto;
+    margin: 0;
   }
   .seg.hot {
     background: #00a651;
@@ -600,12 +666,17 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
+    /* Width = widest branch; short rows stretch to this via width:100% */
+    min-width: 0;
   }
   .par-row {
     position: relative;
     display: flex;
     align-items: center;
-    min-height: 84px;
+    width: 100%;
+    min-height: 104px;
+    padding: 2px 0;
+    box-sizing: border-box;
   }
   .par-row.sel {
     background: rgba(0, 120, 168, 0.08);
@@ -613,35 +684,31 @@
     outline-offset: -2px;
   }
   .par-row .seg.jin {
-    width: 10px;
+    width: 12px;
+    margin-left: 0;
+    flex-shrink: 0;
   }
+  /*
+   * Grow jout fills empty space on SHORT branches so the power line always
+   * reaches the right merge bus (TIA: open rail after last contact).
+   */
   .par-row .seg.jout {
-    width: 10px;
+    flex: 1 1 auto;
+    min-width: 12px;
+    width: auto !important;
+    margin-right: 0;
+    margin-left: 0;
   }
-  .branch-tab {
+  .branch-rm {
     position: absolute;
-    left: 2px;
+    right: 2px;
     top: 2px;
     z-index: 5;
-    font-size: 9px;
-    font-weight: 700;
-    font-family: Consolas, monospace;
-    color: #5a6570;
-    background: #e8eef2;
-    border: 1px solid #c5ccd2;
-    border-radius: 2px;
-    padding: 0 4px;
-    cursor: pointer;
-    line-height: 1.4;
+    opacity: 0;
   }
-  .branch-tab:hover {
-    border-color: #0078a8;
-    color: #005f87;
-  }
-  .branch-tab.sel {
-    background: #0078a8;
-    color: #fff;
-    border-color: #005f87;
+  .par-row:hover .branch-rm,
+  .par-row.sel .branch-rm {
+    opacity: 1;
   }
   .btn.tiny.rm {
     align-self: center;

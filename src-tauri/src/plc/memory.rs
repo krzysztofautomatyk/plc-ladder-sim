@@ -19,9 +19,10 @@ pub const MEMORY_BIT_COUNT: usize = 4096;
 pub const MEMORY_WORD_COUNT: usize = 4096;
 
 /// Compact snapshot sizes used by live UI events and `get_memory_snapshot(compact)`.
-/// Must cover demo R40–R42, watch panel, Memory view (first 64), and default I/Q alloc (128).
+/// Must cover demo R40–R42, water-tank R100–R127, watch panel, and default I/Q alloc.
 pub const COMPACT_BIT_COUNT: usize = 256;
-pub const COMPACT_WORD_COUNT: usize = 128;
+/// Holding words in UI snapshots (R0…R255) — MOVE/math/cmp live values need this range.
+pub const COMPACT_WORD_COUNT: usize = 256;
 /// Input registers in compact snapshots (diagnostics IR0–5 + headroom).
 pub const COMPACT_INPUT_REG_COUNT: usize = 32;
 

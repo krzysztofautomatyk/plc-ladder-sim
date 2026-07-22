@@ -3,6 +3,7 @@ import {
   readMemoryBit,
   readMemoryValue,
   formatLiveOperand,
+  formatLiveParts,
   elementAddress,
 } from "./memoryRead";
 import type { MemorySnapshot } from "../../../shared/lib/types";
@@ -69,6 +70,10 @@ describe("readMemoryValue / formatLiveOperand", () => {
     expect(formatLiveOperand(m, { area: "holding", index: 40 }, (a) => `R${a!.index}`)).toBe(
       "R40=1234"
     );
+    expect(formatLiveParts(m, { area: "holding", index: 40 }, (a) => `R${a!.index}`)).toEqual({
+      addr: "R40",
+      val: "1234",
+    });
   });
 
   it("reads timer ET from dedicated image", () => {

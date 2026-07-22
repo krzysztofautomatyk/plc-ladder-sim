@@ -100,10 +100,10 @@ function mockInvoke<T>(cmd: string, _args?: Record<string, unknown>): CommandRes
       data: {
         coils: Array(256).fill(false),
         discrete_inputs: Array(256).fill(false),
-        holding_registers: Array(128).fill(0),
+        holding_registers: Array(256).fill(0),
         input_registers: Array(32).fill(0),
         memory_bits: Array(256).fill(false),
-        memory_words: Array(128).fill(0),
+        memory_words: Array(256).fill(0),
         timer_et: Array(256).fill(0),
         timer_q: Array(256).fill(false),
         counter_cv: Array(256).fill(0),

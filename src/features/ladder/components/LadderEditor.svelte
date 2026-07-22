@@ -3,6 +3,7 @@
   import type { Address, LadderElement } from "../../../shared/lib/types";
   import { readMemoryBit } from "../lib/memoryRead";
   import { kindForKey } from "../lib/shortcuts";
+  import type { MoveDir } from "../lib/ladderMove";
   import RungView from "./LadderNetwork.svelte";
   import LadderInsertToolbar from "./LadderInsertToolbar.svelte";
 
@@ -36,6 +37,9 @@
       <span class="sep">›</span>
       <strong>{plc.program.name}</strong>
       <span class="lang">LAD</span>
+      <span class="hint" style="margin-left:8px"
+        >{plc.program.rungs.length} networks</span
+      >
     </div>
     <input class="ver" bind:value={plc.program.version} title="Version" />
     <button type="button" class="tia-btn" onclick={() => plc.addRung()}>+ Network</button>
@@ -75,7 +79,7 @@
           active={plc.isRungActive(rung.id)}
           isElementActive={(id) => plc.isActive(id)}
           isEnergized={isEnergized}
-          labelFor={(id) => plc.labelFor(id)}
+          labelFor={(id, el) => (el ? plc.labelForElement(el) : plc.labelFor(id))}
           online={plc.status?.run_state === "run" || plc.status?.running === true}
           onSelect={() => plc.selectRung(rung.id)}
           onSelectBranch={(bi) => plc.selectBranch(rung.id, bi)}
@@ -87,6 +91,8 @@
           onComment={(c) => plc.updateRungComment(rung.id, c)}
           onAddKind={(k) => plc.addElement(rung.id, k)}
           onRemoveElement={(id) => plc.removeElement(rung.id, id)}
+          onMove={(id, dir: MoveDir) => plc.moveInRung(rung.id, id, dir)}
+          canMove={(id, dir: MoveDir) => plc.canMoveInRung(rung.id, id, dir)}
           onChangeElement={(el) => plc.updateElement(rung.id, el)}
           onAddOrBranch={() => plc.addOrBranch(rung.id)}
           onRemoveOrBranch={(bi) => plc.removeOrBranch(rung.id, bi)}
@@ -105,23 +111,22 @@
 <style>
   .editor-root {
     height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    background: #c8cdd2;
-    min-height: 0;
+    background: #d8dde3;
+    overflow: hidden;
   }
-
   .editor-toolbar {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
-    background: linear-gradient(180deg, #f7f9fb, #e8eef2);
-    border-bottom: 1px solid #9aa3ab;
+    background: linear-gradient(180deg, #f4f6f8, #e6ebf0);
+    border-bottom: 1px solid #b0b8c0;
     flex-shrink: 0;
+    z-index: 5;
   }
-
   .block-title {
     display: flex;
     align-items: center;
@@ -129,12 +134,12 @@
     font-size: 13px;
   }
   .ob {
-    font-weight: 800;
-    color: #fff;
     background: #005f87;
-    padding: 2px 7px;
-    border-radius: 2px;
+    color: #fff;
+    font-weight: 700;
     font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 2px;
   }
   .sep {
     color: #8a949e;
@@ -143,57 +148,55 @@
     font-size: 10px;
     font-weight: 700;
     color: #005f87;
-    border: 1px solid #005f87;
-    padding: 1px 5px;
+    border: 1px solid #8ab;
+    padding: 0 4px;
     border-radius: 2px;
   }
   .ver {
-    width: 56px;
-    font-family: Consolas, monospace;
+    width: 52px;
+    border: 1px solid #b0b8c0;
+    padding: 2px 4px;
     font-size: 12px;
   }
   .hint {
     margin-left: auto;
     font-size: 11px;
-    color: #6a7580;
+    color: #6a7682;
   }
-
   .editor-canvas {
-    flex: 1;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: auto;
-    padding: 10px 0 28px;
-    background: linear-gradient(180deg, #cfd4d9 0%, #c5cad0 100%);
+    padding: 10px 0 24px;
+    /* Only this region scrolls — OB1 bar + insert strip stay pinned above */
   }
-
+  .canvas-end {
+    text-align: center;
+    font-size: 11px;
+    color: #8a949e;
+    padding: 12px;
+  }
   .empty {
     display: flex;
+    align-items: center;
     justify-content: center;
-    padding: 48px 16px;
+    height: 100%;
+    min-height: 200px;
   }
   .empty-card {
     background: #fff;
-    border: 1px solid #b0b8c0;
-    padding: 28px 36px;
+    border: 1px solid #c0c7ce;
+    padding: 24px 32px;
     text-align: center;
-    max-width: 400px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    max-width: 360px;
   }
   .empty-card h3 {
     margin: 0 0 8px;
-    color: #003d5c;
+    font-size: 14px;
   }
   .empty-card p {
     margin: 0 0 16px;
     font-size: 12px;
-    color: #5a6570;
-    line-height: 1.45;
-  }
-
-  .canvas-end {
-    text-align: center;
-    font-size: 10px;
-    color: #8a949e;
-    font-family: Consolas, monospace;
-    padding: 8px;
+    color: #6a7682;
   }
 </style>

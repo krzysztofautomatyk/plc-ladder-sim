@@ -48,4 +48,28 @@ describe("resolveStrokes", () => {
     expect(s.strokeBody).toBe(COL_BLUE);
     expect(s.fillCoil).toContain("rgba(21, 101, 192");
   });
+
+  it("never paints a contact blue just because its bit is ON", () => {
+    // Bug fix: bit true must not turn contact poles / stubs blue
+    const s = resolveStrokes({
+      active: true,
+      powerIn: true,
+      energized: true,
+      isCoil: false,
+    });
+    expect(s.strokeOut).toBe(COL_GREEN);
+    expect(s.strokeBody).toBe(COL_GREEN);
+  });
+
+  it("contact with bit ON but no power stays off-colored (not blue)", () => {
+    const s = resolveStrokes({
+      active: false,
+      powerIn: false,
+      energized: true,
+      isCoil: false,
+    });
+    expect(s.strokeOut).toBe(COL_OFF);
+    expect(s.strokeBody).toBe(COL_OFF);
+  });
 });
+

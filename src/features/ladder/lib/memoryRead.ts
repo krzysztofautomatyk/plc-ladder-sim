@@ -140,7 +140,7 @@ export function readMemoryValue(
   }
 }
 
-/** Format address + live value for FB parameter rows, e.g. `R40 = 123`. */
+/** Format address + live value for FB parameter rows, e.g. `R40=123`. */
 export function formatLiveOperand(
   mem: MemorySnapshot | null | undefined,
   addr: Address | null | undefined,
@@ -152,8 +152,41 @@ export function formatLiveOperand(
   return `${label}=${val}`;
 }
 
+/** Split address / live value for TIA-style FB rows (addr left, big value badge). */
+export function formatLiveParts(
+  mem: MemorySnapshot | null | undefined,
+  addr: Address | null | undefined,
+  formatAddress: (a: Address | null | undefined) => string
+): { addr: string; val: string } {
+  if (!addr) return { addr: "—", val: "" };
+  return {
+    addr: formatAddress(addr),
+    val: String(readMemoryValue(mem, addr)),
+  };
+}
+
 /** True if this ladder element has a primary address we can monitor. */
 export function elementAddress(el: { address?: Address } | { type: string }): Address | null {
   if ("address" in el && el.address) return el.address;
+  return null;
+}
+
+/**
+ * Best address for symbolic labels on the ladder canvas.
+ * Prefer the operand operators care about (coil/contact addr, MOVE dest, etc.).
+ */
+export function labelAddress(el: {
+  type: string;
+  address?: Address;
+  done_address?: Address | null;
+  source?: Address;
+  dest?: Address;
+  a?: Address;
+}): Address | null {
+  if ("address" in el && el.address) return el.address;
+  if (el.type === "move" && el.dest) return el.dest;
+  if ((el.type === "math" || el.type === "compare") && el.a) return el.a;
+  if (el.done_address) return el.done_address;
+  if (el.dest) return el.dest;
   return null;
 }

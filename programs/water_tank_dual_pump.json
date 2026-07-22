@@ -1,0 +1,2067 @@
+{
+  "name": "Water_Tank_Dual_Pump",
+  "version": "1.0.0",
+  "description": "Dual-pump wet-well with hydrostatic SP, inflow factor K, fault failover, locks, run-time & starts. Enable sim on I0.",
+  "rungs": [
+    {
+      "id": "rung_3",
+      "comment": "[SIM] 200 ms free-run tick M0 (TON T15, NC self-reset)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_nc",
+          "id": "c_1",
+          "address": {
+            "area": "memory_bit",
+            "index": 0
+          }
+        },
+        {
+          "type": "ton",
+          "id": "ton_2",
+          "preset_ms": 200,
+          "timer_index": 15,
+          "done_address": {
+            "area": "memory_bit",
+            "index": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_7",
+      "comment": "[SIM] PUMP_STEP = FILL×100/K when K>0 (R103)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "compare",
+          "id": "cmp_4",
+          "op": "gt",
+          "a": {
+            "area": "holding",
+            "index": 101
+          },
+          "b": {
+            "area": "holding",
+            "index": 109
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_5",
+          "op": "mul",
+          "a": {
+            "area": "holding",
+            "index": 102
+          },
+          "b": {
+            "area": "holding",
+            "index": 108
+          },
+          "dest": {
+            "area": "holding",
+            "index": 111
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_6",
+          "op": "div",
+          "a": {
+            "area": "holding",
+            "index": 111
+          },
+          "b": {
+            "area": "holding",
+            "index": 101
+          },
+          "dest": {
+            "area": "holding",
+            "index": 103
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_11",
+      "comment": "[SIM] ANY pump M22 = Q0 ∨ Q1",
+      "enabled": true,
+      "or_branches": [
+        [
+          {
+            "type": "contact_no",
+            "id": "c_9",
+            "address": {
+              "area": "coil",
+              "index": 0
+            }
+          }
+        ],
+        [
+          {
+            "type": "contact_no",
+            "id": "c_10",
+            "address": {
+              "area": "coil",
+              "index": 1
+            }
+          }
+        ]
+      ],
+      "elements": [
+        {
+          "type": "coil",
+          "id": "coil_8",
+          "address": {
+            "area": "memory_bit",
+            "index": 22
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_15",
+      "comment": "[SIM] BOTH pumps M21 = Q0 ∧ Q1",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_12",
+          "address": {
+            "area": "coil",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_13",
+          "address": {
+            "area": "coil",
+            "index": 1
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_14",
+          "address": {
+            "area": "memory_bit",
+            "index": 21
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_19",
+      "comment": "[SIM] ONE pump M20 = ANY ∧ ¬BOTH",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_16",
+          "address": {
+            "area": "memory_bit",
+            "index": 22
+          }
+        },
+        {
+          "type": "contact_nc",
+          "id": "c_17",
+          "address": {
+            "area": "memory_bit",
+            "index": 21
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_18",
+          "address": {
+            "area": "memory_bit",
+            "index": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_22",
+      "comment": "[SIM] CAP ← PUMP_STEP if ONE",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_20",
+          "address": {
+            "area": "memory_bit",
+            "index": 20
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_21",
+          "source": {
+            "area": "holding",
+            "index": 103
+          },
+          "dest": {
+            "area": "holding",
+            "index": 112
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_25",
+      "comment": "[SIM] CAP ← 2×PUMP_STEP if BOTH",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_23",
+          "address": {
+            "area": "memory_bit",
+            "index": 21
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_24",
+          "op": "add",
+          "a": {
+            "area": "holding",
+            "index": 103
+          },
+          "b": {
+            "area": "holding",
+            "index": 103
+          },
+          "dest": {
+            "area": "holding",
+            "index": 112
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_28",
+      "comment": "[SIM] CAP ← 0 if idle",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_nc",
+          "id": "c_26",
+          "address": {
+            "area": "memory_bit",
+            "index": 22
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_27",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 112
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_31",
+      "comment": "[SIM] Drain regime M25 when CAP ≥ FILL",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "compare",
+          "id": "cmp_29",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 112
+          },
+          "b": {
+            "area": "holding",
+            "index": 102
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_30",
+          "address": {
+            "area": "memory_bit",
+            "index": 25
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_34",
+      "comment": "[SIM] DRAIN = CAP − FILL",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_32",
+          "address": {
+            "area": "memory_bit",
+            "index": 25
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_33",
+          "op": "sub",
+          "a": {
+            "area": "holding",
+            "index": 112
+          },
+          "b": {
+            "area": "holding",
+            "index": 102
+          },
+          "dest": {
+            "area": "holding",
+            "index": 113
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_37",
+      "comment": "[SIM] FILL_NET = FILL − CAP",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_nc",
+          "id": "c_35",
+          "address": {
+            "area": "memory_bit",
+            "index": 25
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_36",
+          "op": "sub",
+          "a": {
+            "area": "holding",
+            "index": 102
+          },
+          "b": {
+            "area": "holding",
+            "index": 112
+          },
+          "dest": {
+            "area": "holding",
+            "index": 114
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_43",
+      "comment": "[SIM] Tick∧EN∧drain: LEVEL ≥ DRAIN → LEVEL −= DRAIN",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_38",
+          "address": {
+            "area": "discrete",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_39",
+          "address": {
+            "area": "memory_bit",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_40",
+          "address": {
+            "area": "memory_bit",
+            "index": 25
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_41",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 113
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_42",
+          "op": "sub",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 113
+          },
+          "dest": {
+            "area": "holding",
+            "index": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_49",
+      "comment": "[SIM] Tick∧EN∧drain: LEVEL < DRAIN → LEVEL = 0",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_44",
+          "address": {
+            "area": "discrete",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_45",
+          "address": {
+            "area": "memory_bit",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_46",
+          "address": {
+            "area": "memory_bit",
+            "index": 25
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_47",
+          "op": "lt",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 113
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_48",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_54",
+      "comment": "[SIM] Tick∧EN∧fill: TMP = LEVEL + FILL_NET",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_50",
+          "address": {
+            "area": "discrete",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_51",
+          "address": {
+            "area": "memory_bit",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_nc",
+          "id": "c_52",
+          "address": {
+            "area": "memory_bit",
+            "index": 25
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_53",
+          "op": "add",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 114
+          },
+          "dest": {
+            "area": "holding",
+            "index": 104
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_60",
+      "comment": "[SIM] Tick∧EN∧fill: TMP ≤ 1000 → LEVEL = TMP",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_55",
+          "address": {
+            "area": "discrete",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_56",
+          "address": {
+            "area": "memory_bit",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_nc",
+          "id": "c_57",
+          "address": {
+            "area": "memory_bit",
+            "index": 25
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_58",
+          "op": "le",
+          "a": {
+            "area": "holding",
+            "index": 104
+          },
+          "b": {
+            "area": "holding",
+            "index": 110
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_59",
+          "source": {
+            "area": "holding",
+            "index": 104
+          },
+          "dest": {
+            "area": "holding",
+            "index": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_66",
+      "comment": "[SIM] Tick∧EN∧fill: TMP > 1000 → LEVEL = 1000",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_61",
+          "address": {
+            "area": "discrete",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_62",
+          "address": {
+            "area": "memory_bit",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_nc",
+          "id": "c_63",
+          "address": {
+            "area": "memory_bit",
+            "index": 25
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_64",
+          "op": "gt",
+          "a": {
+            "area": "holding",
+            "index": 104
+          },
+          "b": {
+            "area": "holding",
+            "index": 110
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_65",
+          "source": {
+            "area": "holding",
+            "index": 110
+          },
+          "dest": {
+            "area": "holding",
+            "index": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_69",
+      "comment": "[SENS] Above stop band M10 = LEVEL > SP_STOP (200 cm)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "compare",
+          "id": "cmp_67",
+          "op": "gt",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 105
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_68",
+          "address": {
+            "area": "memory_bit",
+            "index": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_72",
+      "comment": "[SENS] Start-band / HI M11 = LEVEL ≥ SP_P1_ON (700 cm)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "compare",
+          "id": "cmp_70",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 106
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_71",
+          "address": {
+            "area": "memory_bit",
+            "index": 11
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_76",
+      "comment": "[SENS] ALM_HI Q2 = LEVEL≥700 ∨ hardwired float HI I2",
+      "enabled": true,
+      "or_branches": [
+        [
+          {
+            "type": "contact_no",
+            "id": "c_74",
+            "address": {
+              "area": "memory_bit",
+              "index": 11
+            }
+          }
+        ],
+        [
+          {
+            "type": "contact_no",
+            "id": "c_75",
+            "address": {
+              "area": "discrete",
+              "index": 2
+            }
+          }
+        ]
+      ],
+      "elements": [
+        {
+          "type": "coil",
+          "id": "coil_73",
+          "address": {
+            "area": "coil",
+            "index": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_79",
+      "comment": "[CTRL] DEMAND SET  LEVEL ≥ 700 cm (SP_P1_ON)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "compare",
+          "id": "cmp_77",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 106
+          }
+        },
+        {
+          "type": "coil_set",
+          "id": "set_78",
+          "address": {
+            "area": "memory_bit",
+            "index": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_82",
+      "comment": "[CTRL] DEMAND RESET  LEVEL ≤ 200 cm (SP_STOP) — all pumps off",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "compare",
+          "id": "cmp_80",
+          "op": "le",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 105
+          }
+        },
+        {
+          "type": "coil_reset",
+          "id": "rst_81",
+          "address": {
+            "area": "memory_bit",
+            "index": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_85",
+      "comment": "[CTRL] JOIN_P2 SET  LEVEL ≥ 800 cm (SP_P2_ON) — latch 2nd pump",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "compare",
+          "id": "cmp_83",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 107
+          }
+        },
+        {
+          "type": "coil_set",
+          "id": "set_84",
+          "address": {
+            "area": "memory_bit",
+            "index": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_88",
+      "comment": "[CTRL] JOIN_P2 RESET  LEVEL ≤ 200 cm — release with DEMAND",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "compare",
+          "id": "cmp_86",
+          "op": "le",
+          "a": {
+            "area": "holding",
+            "index": 100
+          },
+          "b": {
+            "area": "holding",
+            "index": 105
+          }
+        },
+        {
+          "type": "coil_reset",
+          "id": "rst_87",
+          "address": {
+            "area": "memory_bit",
+            "index": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_91",
+      "comment": "[CTRL] JOIN_P2 RESET when DEMAND cleared",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_nc",
+          "id": "c_89",
+          "address": {
+            "area": "memory_bit",
+            "index": 2
+          }
+        },
+        {
+          "type": "coil_reset",
+          "id": "rst_90",
+          "address": {
+            "area": "memory_bit",
+            "index": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_95",
+      "comment": "[P1] OK M4 = ¬FAULT(I3) ∧ ¬LOCK(I5)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_nc",
+          "id": "c_92",
+          "address": {
+            "area": "discrete",
+            "index": 3
+          }
+        },
+        {
+          "type": "contact_nc",
+          "id": "c_93",
+          "address": {
+            "area": "discrete",
+            "index": 5
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_94",
+          "address": {
+            "area": "memory_bit",
+            "index": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_99",
+      "comment": "[P2] OK M5 = ¬FAULT(I4) ∧ ¬LOCK(I6)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_nc",
+          "id": "c_96",
+          "address": {
+            "area": "discrete",
+            "index": 4
+          }
+        },
+        {
+          "type": "contact_nc",
+          "id": "c_97",
+          "address": {
+            "area": "discrete",
+            "index": 6
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_98",
+          "address": {
+            "area": "memory_bit",
+            "index": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_102",
+      "comment": "[LEAD] M7 = P2 is lead when P1 not OK",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_nc",
+          "id": "c_100",
+          "address": {
+            "area": "memory_bit",
+            "index": 4
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_101",
+          "address": {
+            "area": "memory_bit",
+            "index": 7
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_108",
+      "comment": "[P1] CMD M6 = P1_OK ∧ (DEMAND ∨ MAN I8)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_103",
+          "address": {
+            "area": "memory_bit",
+            "index": 4
+          }
+        },
+        {
+          "type": "parallel",
+          "id": "par_106",
+          "branches": [
+            [
+              {
+                "type": "contact_no",
+                "id": "c_104",
+                "address": {
+                  "area": "memory_bit",
+                  "index": 2
+                }
+              }
+            ],
+            [
+              {
+                "type": "contact_no",
+                "id": "c_105",
+                "address": {
+                  "area": "discrete",
+                  "index": 8
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "type": "coil",
+          "id": "coil_107",
+          "address": {
+            "area": "memory_bit",
+            "index": 6
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_118",
+      "comment": "[P2] CMD M8 = P2_OK ∧ DEMAND ∧ (JOIN_P2 latch ∨ P1 down ∨ P1 FAULT ∨ MAN I9)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_109",
+          "address": {
+            "area": "memory_bit",
+            "index": 5
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_110",
+          "address": {
+            "area": "memory_bit",
+            "index": 2
+          }
+        },
+        {
+          "type": "parallel",
+          "id": "par_116",
+          "branches": [
+            [
+              {
+                "type": "contact_no",
+                "id": "c_111",
+                "address": {
+                  "area": "memory_bit",
+                  "index": 3
+                }
+              }
+            ],
+            [
+              {
+                "type": "contact_nc",
+                "id": "c_112",
+                "address": {
+                  "area": "memory_bit",
+                  "index": 4
+                }
+              }
+            ],
+            [
+              {
+                "type": "contact_no",
+                "id": "c_113",
+                "address": {
+                  "area": "discrete",
+                  "index": 3
+                }
+              }
+            ],
+            [
+              {
+                "type": "contact_no",
+                "id": "c_114",
+                "address": {
+                  "area": "discrete",
+                  "index": 9
+                }
+              }
+            ],
+            [
+              {
+                "type": "contact_no",
+                "id": "c_115",
+                "address": {
+                  "area": "memory_bit",
+                  "index": 7
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "type": "coil",
+          "id": "coil_117",
+          "address": {
+            "area": "memory_bit",
+            "index": 8
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_121",
+      "comment": "[OUT] Pump 1 contactor Q0 ← M6",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_119",
+          "address": {
+            "area": "memory_bit",
+            "index": 6
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_120",
+          "address": {
+            "area": "coil",
+            "index": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_124",
+      "comment": "[OUT] Pump 2 contactor Q1 ← M8",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_122",
+          "address": {
+            "area": "memory_bit",
+            "index": 8
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_123",
+          "address": {
+            "area": "coil",
+            "index": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_128",
+      "comment": "[ALM] Fault lamp Q3 = P1_FAULT ∨ P2_FAULT",
+      "enabled": true,
+      "or_branches": [
+        [
+          {
+            "type": "contact_no",
+            "id": "c_126",
+            "address": {
+              "area": "discrete",
+              "index": 3
+            }
+          }
+        ],
+        [
+          {
+            "type": "contact_no",
+            "id": "c_127",
+            "address": {
+              "area": "discrete",
+              "index": 4
+            }
+          }
+        ]
+      ],
+      "elements": [
+        {
+          "type": "coil",
+          "id": "coil_125",
+          "address": {
+            "area": "coil",
+            "index": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_133",
+      "comment": "[ALM] Station fail Q4 = DEMAND ∧ ¬P1_OK ∧ ¬P2_OK",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_129",
+          "address": {
+            "area": "memory_bit",
+            "index": 2
+          }
+        },
+        {
+          "type": "contact_nc",
+          "id": "c_130",
+          "address": {
+            "area": "memory_bit",
+            "index": 4
+          }
+        },
+        {
+          "type": "contact_nc",
+          "id": "c_131",
+          "address": {
+            "area": "memory_bit",
+            "index": 5
+          }
+        },
+        {
+          "type": "coil",
+          "id": "coil_132",
+          "address": {
+            "area": "coil",
+            "index": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_136",
+      "comment": "[STAT] 1 s free-run tick M40 (TON T14) for run-time clocks",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_nc",
+          "id": "c_134",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "ton",
+          "id": "ton_135",
+          "preset_ms": 1000,
+          "timer_index": 14,
+          "done_address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_140",
+      "comment": "[STAT] P1: on 1s∧Q0 → TMP=SS+1",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_137",
+          "address": {
+            "area": "coil",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_138",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_139",
+          "op": "add",
+          "a": {
+            "area": "holding",
+            "index": 122
+          },
+          "b": {
+            "area": "holding",
+            "index": 115
+          },
+          "dest": {
+            "area": "holding",
+            "index": 117
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_145",
+      "comment": "[STAT] P1: SS+1 < 60 → SS=TMP",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_141",
+          "address": {
+            "area": "coil",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_142",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_143",
+          "op": "lt",
+          "a": {
+            "area": "holding",
+            "index": 117
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_144",
+          "source": {
+            "area": "holding",
+            "index": 117
+          },
+          "dest": {
+            "area": "holding",
+            "index": 122
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_151",
+      "comment": "[STAT] P1: SS+1 ≥ 60 → SS=0, TMP2=MM+1",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_146",
+          "address": {
+            "area": "coil",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_147",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_148",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 117
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_149",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 122
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_150",
+          "op": "add",
+          "a": {
+            "area": "holding",
+            "index": 121
+          },
+          "b": {
+            "area": "holding",
+            "index": 115
+          },
+          "dest": {
+            "area": "holding",
+            "index": 118
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_157",
+      "comment": "[STAT] P1: MM+1 < 60 → MM=TMP2",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_152",
+          "address": {
+            "area": "coil",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_153",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_154",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 117
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_155",
+          "op": "lt",
+          "a": {
+            "area": "holding",
+            "index": 118
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_156",
+          "source": {
+            "area": "holding",
+            "index": 118
+          },
+          "dest": {
+            "area": "holding",
+            "index": 121
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_164",
+      "comment": "[STAT] P1: MM+1 ≥ 60 → MM=0, HH=HH+1",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_158",
+          "address": {
+            "area": "coil",
+            "index": 0
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_159",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_160",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 117
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_161",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 118
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_162",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 121
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_163",
+          "op": "add",
+          "a": {
+            "area": "holding",
+            "index": 120
+          },
+          "b": {
+            "area": "holding",
+            "index": 115
+          },
+          "dest": {
+            "area": "holding",
+            "index": 120
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_168",
+      "comment": "[STAT] P2: on 1s∧Q1 → TMP=SS+1",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_165",
+          "address": {
+            "area": "coil",
+            "index": 1
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_166",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_167",
+          "op": "add",
+          "a": {
+            "area": "holding",
+            "index": 125
+          },
+          "b": {
+            "area": "holding",
+            "index": 115
+          },
+          "dest": {
+            "area": "holding",
+            "index": 117
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_173",
+      "comment": "[STAT] P2: SS+1 < 60 → SS=TMP",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_169",
+          "address": {
+            "area": "coil",
+            "index": 1
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_170",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_171",
+          "op": "lt",
+          "a": {
+            "area": "holding",
+            "index": 117
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_172",
+          "source": {
+            "area": "holding",
+            "index": 117
+          },
+          "dest": {
+            "area": "holding",
+            "index": 125
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_179",
+      "comment": "[STAT] P2: SS+1 ≥ 60 → SS=0, TMP2=MM+1",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_174",
+          "address": {
+            "area": "coil",
+            "index": 1
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_175",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_176",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 117
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_177",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 125
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_178",
+          "op": "add",
+          "a": {
+            "area": "holding",
+            "index": 124
+          },
+          "b": {
+            "area": "holding",
+            "index": 115
+          },
+          "dest": {
+            "area": "holding",
+            "index": 118
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_185",
+      "comment": "[STAT] P2: MM+1 < 60 → MM=TMP2",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_180",
+          "address": {
+            "area": "coil",
+            "index": 1
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_181",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_182",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 117
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_183",
+          "op": "lt",
+          "a": {
+            "area": "holding",
+            "index": 118
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_184",
+          "source": {
+            "area": "holding",
+            "index": 118
+          },
+          "dest": {
+            "area": "holding",
+            "index": 124
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_192",
+      "comment": "[STAT] P2: MM+1 ≥ 60 → MM=0, HH=HH+1",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_186",
+          "address": {
+            "area": "coil",
+            "index": 1
+          }
+        },
+        {
+          "type": "contact_no",
+          "id": "c_187",
+          "address": {
+            "area": "memory_bit",
+            "index": 40
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_188",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 117
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "compare",
+          "id": "cmp_189",
+          "op": "ge",
+          "a": {
+            "area": "holding",
+            "index": 118
+          },
+          "b": {
+            "area": "holding",
+            "index": 116
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_190",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 124
+          }
+        },
+        {
+          "type": "math",
+          "id": "math_191",
+          "op": "add",
+          "a": {
+            "area": "holding",
+            "index": 123
+          },
+          "b": {
+            "area": "holding",
+            "index": 115
+          },
+          "dest": {
+            "area": "holding",
+            "index": 123
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_197",
+      "comment": "[STAT] I7: clear P1 HH/MM/SS",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_193",
+          "address": {
+            "area": "discrete",
+            "index": 7
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_194",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 120
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_195",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 121
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_196",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 122
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_202",
+      "comment": "[STAT] I7: clear P2 HH/MM/SS",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_no",
+          "id": "c_198",
+          "address": {
+            "area": "discrete",
+            "index": 7
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_199",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 123
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_200",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 124
+          }
+        },
+        {
+          "type": "move",
+          "id": "mov_201",
+          "source": {
+            "area": "holding",
+            "index": 109
+          },
+          "dest": {
+            "area": "holding",
+            "index": 125
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_205",
+      "comment": "[STAT] P1 starts CTU C0 on ↑M6; reset I7",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_rising",
+          "id": "re_203",
+          "address": {
+            "area": "memory_bit",
+            "index": 6
+          }
+        },
+        {
+          "type": "ctu",
+          "id": "ctu_204",
+          "preset": 65535,
+          "counter_index": 0,
+          "done_address": null,
+          "reset_address": {
+            "area": "discrete",
+            "index": 7
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_207",
+      "comment": "[STAT] R126 ← CV0 (P1 starts)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "move",
+          "id": "mov_206",
+          "source": {
+            "area": "holding",
+            "index": 3072
+          },
+          "dest": {
+            "area": "holding",
+            "index": 126
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_210",
+      "comment": "[STAT] P2 starts CTU C1 on ↑M8; reset I7",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "contact_rising",
+          "id": "re_208",
+          "address": {
+            "area": "memory_bit",
+            "index": 8
+          }
+        },
+        {
+          "type": "ctu",
+          "id": "ctu_209",
+          "preset": 65535,
+          "counter_index": 1,
+          "done_address": null,
+          "reset_address": {
+            "area": "discrete",
+            "index": 7
+          }
+        }
+      ]
+    },
+    {
+      "id": "rung_212",
+      "comment": "[STAT] R127 ← CV1 (P2 starts)",
+      "enabled": true,
+      "or_branches": [],
+      "elements": [
+        {
+          "type": "move",
+          "id": "mov_211",
+          "source": {
+            "area": "holding",
+            "index": 3074
+          },
+          "dest": {
+            "area": "holding",
+            "index": 127
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "author": "process engineering pack",
+    "standard": "IEC 61131-3 LAD subset",
+    "doc": "docs/WATER_TANK_PUMP_STATION.md",
+    "k_scale": "R101 = K*100 (50=0.5, 150=1.5)",
+    "level_scale": "R100 = cm (0..1000)",
+    "hysteresis": "P1 ON≥700cm, P2 ON≥800cm, both OFF≤200cm"
+  }
+}

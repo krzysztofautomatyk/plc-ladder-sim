@@ -88,7 +88,7 @@
     <table class="tia-table">
       <thead>
         <tr>
-          <th style="width:18%">Name</th>
+          <th style="width:14%">Label ≤10</th>
           <th style="width:12%">Data type</th>
           <th style="width:12%">Area</th>
           <th style="width:10%">Address</th>
@@ -100,7 +100,14 @@
       <tbody>
         {#each rows as r (r.id)}
           <tr>
-            <td><input bind:value={r.name} /></td>
+            <td>
+              <input
+                bind:value={r.name}
+                maxlength="10"
+                title="Short label max 10 characters"
+                style="font-family:var(--font-mono);font-weight:700"
+              />
+            </td>
             <td>
               <select
                 value={r.data_type}
@@ -137,7 +144,9 @@
               />
             </td>
             <td><code>{r.address_display || displayFor(r.area, r.index)}</code></td>
-            <td><input bind:value={r.comment} /></td>
+            <td>
+              <input bind:value={r.comment} placeholder="Full description…" title="Full description" />
+            </td>
             <td>
               <button type="button" class="tia-btn" onclick={() => removeRow(r.id)}>×</button>
             </td>

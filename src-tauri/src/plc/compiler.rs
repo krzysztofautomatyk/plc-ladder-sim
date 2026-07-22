@@ -794,6 +794,20 @@ pub fn demo_program() -> LadderProgram {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn water_tank_program_compiles() {
+        let json = include_str!("../../../programs/water_tank_dual_pump.json");
+        let prog: LadderProgram = serde_json::from_str(json).expect("parse water tank json");
+        assert!(prog.rungs.len() > 20);
+        let compiled = compile(prog).expect("compile water tank LAD");
+        assert!(
+            compiled.instructions.len() > 40,
+            "instr count {}",
+            compiled.instructions.len()
+        );
+    }
+
     use super::*;
 
     #[test]
