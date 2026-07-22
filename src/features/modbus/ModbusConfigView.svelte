@@ -178,6 +178,14 @@
         protection. SCADA writes require both the global allow flag and a non-protected rule.
       </p>
     </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+      <button
+        type="button"
+        class="tia-btn tia-btn-primary"
+        title="Water tank HR 100–150 live register table"
+        onclick={() => plc.setView("regmap")}>Mapa rejestrów (Water tank)</button
+      >
+    </div>
   </div>
 
   <div style="padding:12px;display:grid;gap:12px;max-width:1200px">

@@ -3,7 +3,8 @@
 **Project:** `Water_Tank_Dual_Pump` v1.0.0  
 **Standard:** IEC 61131-3 Ladder Diagram (subset implemented by PLC Ladder Simulator Pro)  
 **Domain:** Municipal / industrial wet-well pump-out station with continuous inflow  
-**Load in app:** toolbar → **Water tank**
+**Load in app:** toolbar → **Water tank**  
+**Modbus map:** `docs/WATER_TANK_MODBUS_MAP.md` · auto-applied on load · `programs/water_tank_modbus_map.json`
 
 ---
 

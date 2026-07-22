@@ -10,6 +10,7 @@
   import WatchPanel from "../features/watch/WatchPanel.svelte";
   import SymbolTableView from "../features/symbols/SymbolTableView.svelte";
   import ModbusConfigView from "../features/modbus/ModbusConfigView.svelte";
+  import WaterTankRegisterMapView from "../features/modbus/WaterTankRegisterMapView.svelte";
   import MathHelpView from "../features/docs/MathHelpView.svelte";
   import AuditPanel from "../features/audit/AuditPanel.svelte";
   import LogsView from "../features/diagnostics/LogsView.svelte";
@@ -41,6 +42,7 @@
     { id: "alloc", label: "Memory allocation", ico: "▤", group: "PLC data" },
     { id: "math", label: "Math operations", ico: "∑", group: "PLC data" },
     { id: "modbus", label: "Modbus TCP", ico: "⇄", group: "Device config" },
+    { id: "regmap", label: "Mapa rejestrów", ico: "☷", group: "Device config" },
     { id: "audit", label: "Audit trail", ico: "📋", group: "Diagnostics" },
     { id: "logs", label: "Logs", ico: "🗎", group: "Diagnostics" },
   ];
@@ -95,9 +97,15 @@
     <button
       type="button"
       class="tia-btn tia-btn-primary"
-      title="Load dual-pump wet-well (38 networks) — primary project"
+      title="Load dual-pump wet-well — primary project"
       disabled={plc.busy}
       onclick={() => plc.loadWaterTank()}>Water tank ({networkCount})</button
+    >
+    <button
+      type="button"
+      class="tia-btn"
+      title="Water tank Modbus HR 100–150 register map (live)"
+      onclick={() => plc.setView("regmap")}>Mapa rejestrów</button
     >
     <button
       type="button"
@@ -204,6 +212,8 @@
           <MemoryAllocationView />
         {:else if plc.view === "modbus"}
           <ModbusConfigView />
+        {:else if plc.view === "regmap"}
+          <WaterTankRegisterMapView />
         {:else if plc.view === "math"}
           <MathHelpView />
         {:else if plc.view === "audit"}

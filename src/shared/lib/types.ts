@@ -276,6 +276,7 @@ export type AppView =
   | "ladder"
   | "tags"
   | "modbus"
+  | "regmap"
   | "math"
   | "audit"
   | "watch"

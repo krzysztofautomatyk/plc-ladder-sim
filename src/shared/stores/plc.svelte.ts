@@ -8,6 +8,7 @@ import {
   createWaterTankSymbols,
   WATER_TANK_MEMORY_SEED,
 } from "../lib/waterTankProgram";
+import { createWaterTankModbusMap } from "../lib/waterTankModbusMap";
 import { createElement } from "../../features/ladder/elements";
 import {
   addParallelBranch,
@@ -440,7 +441,15 @@ class PlcStore {
       const symRes = await api.setSymbols(tags);
       if (symRes.ok && symRes.data) this.symbols = symRes.data.symbols;
       else this.symbols = tags;
-      this.message = `Water_Tank_Dual_Pump · ${prog.rungs.length} nets · hysteresis 200/700/800 cm · I0=SIM`;
+
+      // Dedicated SCADA map (avoids demo M0–15→HR100 collision with LEVEL)
+      const mbMap = createWaterTankModbusMap();
+      const mapErr = await this.saveModbusMap(mbMap);
+      if (mapErr) {
+        this.message = `Water tank loaded · Modbus map error: ${mapErr}`;
+      } else {
+        this.message = `Water_Tank_Dual_Pump · ${prog.rungs.length} nets · Modbus map ${mbMap.entries.length} rules · 200/700/800 cm · I0=SIM`;
+      }
     } catch (e) {
       this.message = `Water tank load failed: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
