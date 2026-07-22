@@ -55,9 +55,29 @@
 
   async function applyMap() {
     const err = await plc.saveModbusMap(createWaterTankModbusMap());
+    await plc.setModbusWriteEnabled(true);
+    if (!plc.modbus.running) await plc.startModbus();
     plc.message = err
       ? `Modbus map error: ${err}`
-      : "Water tank Modbus map (HR100–150) applied";
+      : `Mapa HR100–150 · writes ON · MB ${plc.modbus.running ? "ON" : "OFF"} :${plc.modbus.port}`;
+  }
+
+  async function forceRow(row: WaterTankRegisterRow) {
+    if (row.access !== "R/W" || row.live.kind !== "holding") return;
+    const cur = liveValue(row) ?? 0;
+    const raw = window.prompt(
+      `${row.symbol} (HR${row.hr} → ${row.plc})\nZakres 0…65535`,
+      String(cur)
+    );
+    if (raw == null) return;
+    const v = Number(raw.trim());
+    if (!Number.isFinite(v) || v < 0 || v > 65535 || !Number.isInteger(v)) {
+      plc.message = "Nieprawidłowa wartość (0…65535)";
+      return;
+    }
+    // Prefer in-app force (bypasses Modbus write gate)
+    await plc.setHolding(row.live.plcR, v);
+    plc.message = `Forced ${row.plc} / HR${row.hr} = ${v}`;
   }
 </script>
 
@@ -66,13 +86,14 @@
     <div>
       <h1>Mapa rejestrów Modbus — Water Tank</h1>
       <p>
-        Wszystkie sygnały stacji w <strong>HR 100…150</strong> (FC03). Slave:
-        <code>127.0.0.1:5020</code>. Wartości na żywo z obrazu procesu PLC.
+        Wszystkie sygnały stacji w <strong>HR 100…150</strong> (FC03/06). Slave:
+        <code>127.0.0.1:{plc.modbus.port}</code>.
+        <strong>HR109 = SP_P1_ON</strong> (PLC R106, domyślnie 700) — nie mylić z PLC R109 (stała 0).
       </p>
     </div>
     <div class="actions">
       <button type="button" class="tia-btn tia-btn-primary" onclick={() => applyMap()}>
-        Zastosuj mapę do Modbus
+        Zastosuj mapę + włącz zapis
       </button>
       <button type="button" class="tia-btn" onclick={() => plc.setView("modbus")}>
         Edytor reguł
@@ -83,10 +104,50 @@
     </div>
   </header>
 
+  <!-- Connection / write gate — ServerDeviceFailure 0x04 when writes OFF -->
+  <div
+    class="conn"
+    class:ok={plc.modbus.running && plc.modbus.write_enabled}
+    class:warn={plc.modbus.running && !plc.modbus.write_enabled}
+    class:off={!plc.modbus.running}
+  >
+    <div class="conn-left">
+      <span class="pill" class:on={plc.modbus.running}>
+        MB {plc.modbus.running ? "ON" : "OFF"} :{plc.modbus.port}
+      </span>
+      <span class="pill" class:on={plc.modbus.write_enabled} class:bad={!plc.modbus.write_enabled}>
+        SCADA write: {plc.modbus.write_enabled ? "ON" : "OFF"}
+      </span>
+      {#if !plc.modbus.write_enabled}
+        <span class="hint-err">
+          FC06/16 → exception <strong>0x04 ServerDeviceFailure</strong> dopóki zapis wyłączony
+        </span>
+      {/if}
+    </div>
+    <div class="conn-actions">
+      {#if !plc.modbus.running}
+        <button type="button" class="tia-btn tia-btn-primary" onclick={() => plc.startModbus()}
+          >Start Modbus</button
+        >
+      {:else}
+        <button type="button" class="tia-btn" onclick={() => plc.stopModbus()}>Stop Modbus</button>
+      {/if}
+      <label class="write-tog">
+        <input
+          type="checkbox"
+          checked={plc.modbus.write_enabled}
+          onchange={(e) => plc.setModbusWriteEnabled(e.currentTarget.checked)}
+        />
+        Allow SCADA writes
+      </label>
+    </div>
+  </div>
+
   <div class="legend">
-    <span><i class="sw rw"></i> R/W — zapis SCADA (gdy Allow writes)</span>
-    <span><i class="sw ro"></i> R — tylko odczyt (write-protect)</span>
-    <span>HR100–103 = słowa bitowe · HR104–121 = proces · HR122–150 = rezerwa</span>
+    <span><i class="sw rw"></i> R/W — FC06 OK gdy Allow writes</span>
+    <span><i class="sw ro"></i> R — write-protect (0x02)</span>
+    <span>Klik live R/W → force z UI (bez Modbus)</span>
+    <span>HR109 = SP_P1_ON (R106) · HR108 = SP_STOP (R105) · HR110 = SP_P2_ON (R107)</span>
   </div>
 
   <div class="table-wrap">
@@ -127,6 +188,15 @@
             <td class="live">
               {#if val == null}
                 —
+              {:else if row.access === "R/W" && row.live.kind === "holding"}
+                <button
+                  type="button"
+                  class="live-btn"
+                  title="Force value (in-app)"
+                  onclick={() => forceRow(row)}
+                >
+                  <strong>{val}</strong>
+                </button>
               {:else}
                 <strong>{val}</strong>
               {/if}
@@ -205,6 +275,70 @@
     flex-wrap: wrap;
     gap: 6px;
   }
+  .conn {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid #c0c7ce;
+    margin-bottom: 10px;
+    font-size: 12px;
+  }
+  .conn.ok {
+    background: #e8f8ef;
+    border-color: #7dcea0;
+  }
+  .conn.warn {
+    background: #fff8e6;
+    border-color: #e6c87a;
+  }
+  .conn.off {
+    background: #fdecea;
+    border-color: #e0a0a0;
+  }
+  .conn-left {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .conn-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .pill {
+    font-family: Consolas, monospace;
+    font-weight: 700;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: #e8ebef;
+    color: #5a6570;
+  }
+  .pill.on {
+    background: #00a651;
+    color: #fff;
+  }
+  .pill.bad {
+    background: #c0392b;
+    color: #fff;
+  }
+  .hint-err {
+    font-size: 11px;
+    color: #8a2a1a;
+  }
+  .write-tog {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    cursor: pointer;
+  }
   .legend {
     display: flex;
     flex-wrap: wrap;
@@ -213,6 +347,16 @@
     color: #5a6570;
     margin-bottom: 10px;
     align-items: center;
+  }
+  .live-btn {
+    border: 1px solid #9ec9e0;
+    background: #e8f4fc;
+    border-radius: 3px;
+    padding: 1px 8px;
+    cursor: pointer;
+  }
+  .live-btn:hover {
+    border-color: #0078a8;
   }
   .sw {
     display: inline-block;

@@ -442,13 +442,18 @@ class PlcStore {
       if (symRes.ok && symRes.data) this.symbols = symRes.data.symbols;
       else this.symbols = tags;
 
-      // Dedicated SCADA map (avoids demo M0–15→HR100 collision with LEVEL)
+      // Dedicated SCADA map (HR100–150). Enable writes so SCADA can force setpoints
+      // (without this, FC06 returns ServerDeviceFailure 0x04).
       const mbMap = createWaterTankModbusMap();
       const mapErr = await this.saveModbusMap(mbMap);
+      await this.setModbusWriteEnabled(true);
+      if (!this.modbus.running) {
+        await this.startModbus();
+      }
       if (mapErr) {
         this.message = `Water tank loaded · Modbus map error: ${mapErr}`;
       } else {
-        this.message = `Water_Tank_Dual_Pump · ${prog.rungs.length} nets · Modbus map ${mbMap.entries.length} rules · 200/700/800 cm · I0=SIM`;
+        this.message = `Water_Tank_Dual_Pump · ${prog.rungs.length} nets · Modbus HR100–150 · writes ON · :${this.modbus.port} · 200/700/800 cm`;
       }
     } catch (e) {
       this.message = `Water tank load failed: ${e instanceof Error ? e.message : String(e)}`;

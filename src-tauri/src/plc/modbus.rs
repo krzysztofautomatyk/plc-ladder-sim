@@ -431,6 +431,12 @@ fn handle_request(
         }
         Request::WriteSingleRegister(addr, value) => {
             if !memory.allow_modbus_write() {
+                // 0x04 — global gate off (UI: Modbus → Allow SCADA writes)
+                warn!(
+                    addr,
+                    value,
+                    "WriteSingleRegister denied: SCADA writes disabled (enable in app)"
+                );
                 return Err(ExceptionCode::ServerDeviceFailure);
             }
             let _applied = write_reg_mapped(memory, map, ModbusTable::Holding, addr, value)?;
@@ -454,6 +460,11 @@ fn handle_request(
         }
         Request::WriteMultipleRegisters(addr, values) => {
             if !memory.allow_modbus_write() {
+                warn!(
+                    addr,
+                    qty = values.len(),
+                    "WriteMultipleRegisters denied: SCADA writes disabled (enable in app)"
+                );
                 return Err(ExceptionCode::ServerDeviceFailure);
             }
             let qty = values.len() as u16;

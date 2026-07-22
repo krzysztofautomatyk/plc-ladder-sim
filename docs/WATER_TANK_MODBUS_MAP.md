@@ -5,7 +5,20 @@
 **Aplikacja:** toolbar → **Mapa rejestrów** · drzewo → *Device config → Mapa rejestrów*  
 **Kod:** `src/shared/lib/waterTankModbusMap.ts` · JSON: `programs/water_tank_modbus_map.json`
 
-Cały obraz stacji dla SCADA jest w **jednym bloku holding 100–150** (brak osobnych DI/coil w mapie water tank — bity w HR100–103).
+Cały obraz stacji dla SCADA jest w **jednym bloku holding 100–150** (bity w HR100–103).
+
+### Zapis z SCADA (ważne)
+
+| Problem | Przyczyna | Rozwiązanie |
+|---------|-----------|-------------|
+| **Exception 0x04 ServerDeviceFailure** | Globalny gate zapisu wyłączony | **Mapa rejestrów** → ☑ *Allow SCADA writes* albo *Zastosuj mapę + włącz zapis* · albo **Modbus TCP** → Allow SCADA writes |
+| **Exception 0x02 Illegal Data Address** | Reguła write-protected (RO) | Zapisuj tylko HR z kolumną **R/W** (np. 104–106, 108–110) |
+| Brak połączenia | Slave OFF | Start Modbus w aplikacji |
+
+Przycisk **Water tank** automatycznie: mapa HR100–150 + **writes ON** + start slave.
+
+**Uwaga adresów:** **HR109 = SP_P1_ON (PLC R106, seed 700)** — to nie jest PLC R109 (stała C0).  
+Żeby zmienić próg P1 z 700 → 650: **FC06 HR109 = 650** (przy writes ON).
 
 ---
 
